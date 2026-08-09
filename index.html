@@ -530,7 +530,7 @@
     }, 1500);
   }
 
-  function updateDuplexRX(text, confidence = 0.8) {
+   function updateDuplexRX(text, confidence = 0.8) {
     duplexState.rxText = text;
     duplexState.confidence = Math.min(1, Math.max(0, confidence || 0.8));
     duplexState.frame++;
@@ -540,14 +540,10 @@
     if (duplexFrame) duplexFrame.textContent = duplexState.frame;
     duplexSetStatus('recepción activa');
   }
-0.8));
-    duplexState.frame++;
-    duplexState.lastRxAt = Date.now();
-    if (duplexRx) duplexRx.textContent = text.length > 18 ? text.slice(0,18) + '…' : text;
-    if (duplexConfidence) duplexConfidence.textContent = Math.round(duplexState.confidence * 100) + '%';
-    if (duplexFrame) duplexFrame.textContent = duplexState.frame;
-    duplexSetStatus('recepción activa');
-  }
+
+  // ---------- Receptor Morse de audio en tiempo real ----------
+  const morseRxState = {
+
 
   // ---------- Receptor Morse de audio en tiempo real ----------
   // Mide envolvente de energía instantánea sobre la señal de micrófono
