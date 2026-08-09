@@ -1,2126 +1,933 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Registrador de Barrido — 0–20 Hz</title>
-<style>
-  :root{
-    --bg:#0a0e0f;
-    --panel:#10171a;
-    --panel-alt:#0d1315;
-    --grid-line:#1c2b2e;
-    --ink-amber:#e8a33d;
-    --ink-amber-dim:rgba(232,163,61,0.32);
-    --ink-red:#e2483d;
-    --ink-red-dim:rgba(226,72,61,0.18);
-    --ink-teal:#4ea8a0;
-    --ink-user:#73d8ff;
-    --ink-infra:#58d68d;
-    --ink-critical:#ff2ee0;
-    --ink-critical-dim:rgba(255,46,224,0.14);
-    --text-primary:#e9e4d8;
-    --text-muted:#7c8a86;
-    --border:#23302f;
-    --font-display:"Oswald","Arial Narrow",sans-serif;
-    --font-mono:"JetBrains Mono","IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-  }
-  *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;background:var(--bg);color:var(--text-primary);font-family:var(--font-mono);}
-  body{min-height:100vh;padding:28px 20px 60px;}
-  .wrap{max-width:1180px;margin:0 auto;}
-
-  header{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:20px;}
-  .title-block h1{
-    font-family:var(--font-display);
-    text-transform:uppercase;
-    letter-spacing:0.06em;
-    font-size:26px;
-    margin:0 0 4px;
-    color:var(--text-primary);
-  }
-  .title-block .sub{font-size:11px;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;}
-  .status-pill{
-    font-family:var(--font-display);
-    text-transform:uppercase;
-    letter-spacing:0.08em;
-    font-size:13px;
-    padding:7px 16px;
-    border:1px solid var(--border);
-    border-radius:2px;
-    background:var(--panel-alt);
-    color:var(--text-muted);
-    display:flex;align-items:center;gap:8px;
-  }
-  .status-pill .dot{width:8px;height:8px;border-radius:50%;background:var(--text-muted);}
-  .status-pill.standby .dot{background:var(--text-muted);}
-  .status-pill.calibrating{color:var(--ink-teal);border-color:var(--ink-teal);}
-  .status-pill.calibrating .dot{background:var(--ink-teal);box-shadow:0 0 8px var(--ink-teal);animation:pulse 1s infinite;}
-  .status-pill.sweeping{color:var(--ink-amber);border-color:var(--ink-amber);}
-  .status-pill.sweeping .dot{background:var(--ink-amber);box-shadow:0 0 8px var(--ink-amber);animation:pulse 1s infinite;}
-  .status-pill.anomaly{color:var(--ink-red);border-color:var(--ink-red);background:var(--ink-red-dim);}
-  .status-pill.anomaly .dot{background:var(--ink-red);box-shadow:0 0 10px var(--ink-red);animation:pulse .5s infinite;}
-  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
-
-  .layout{display:grid;grid-template-columns:1fr 340px;gap:18px;}
-  @media (max-width:860px){.layout{grid-template-columns:1fr;}}
-
-  .panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:18px 18px 16px;}
-  .panel + .panel{margin-top:16px;}
-
-  .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:16px;}
-  button{
-    font-family:var(--font-display);
-    text-transform:uppercase;
-    letter-spacing:0.06em;
-    font-size:12.5px;
-    padding:10px 18px;
-    background:var(--panel-alt);
-    border:1px solid var(--border);
-    color:var(--text-primary);
-    border-radius:2px;
-    cursor:pointer;
-    transition:border-color .15s, color .15s;
-  }
-  button:hover:not(:disabled){border-color:var(--ink-amber);color:var(--ink-amber);}
-  button:disabled{opacity:0.35;cursor:not-allowed;}
-  button.primary{border-color:var(--ink-amber);color:var(--ink-amber);}
-  button.danger{border-color:var(--ink-red);color:var(--ink-red);}
-
-  .sens{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-muted);margin-left:auto;}
-  .sens input[type=range]{width:120px;accent-color:var(--ink-amber);}
-
-  .readout-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;}
-  .readout{background:var(--panel-alt);border:1px solid var(--border);border-radius:2px;padding:10px 14px;}
-  .readout .label{font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;}
-  .readout .value{font-size:20px;color:var(--ink-amber);font-variant-numeric:tabular-nums;}
-  .readout .value.small{font-size:14px;color:var(--text-primary);}
-
-  canvas{display:block;width:100%;height:280px;background:var(--panel-alt);border:1px solid var(--border);border-radius:2px;}
-
-  .disclaimer{font-size:11px;color:var(--text-muted);line-height:1.5;margin-top:14px;border-top:1px dashed var(--border);padding-top:12px;}
-
-  .history-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
-  .history-head h2{font-family:var(--font-display);text-transform:uppercase;letter-spacing:0.06em;font-size:14px;margin:0;color:var(--text-primary);}
-  .history-count{font-size:11px;color:var(--text-muted);}
-  .history-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
-  .history-actions button{font-size:10px;padding:7px 10px;}
-  .legend{display:flex;gap:10px;flex-wrap:wrap;margin:-2px 0 12px;font-size:10.5px;color:var(--text-muted);}
-  .legend-item{display:inline-flex;align-items:center;gap:5px;}
-  .legend-dot{width:9px;height:9px;border-radius:2px;display:inline-block;}
-  .legend-dot.user{background:var(--ink-user);box-shadow:0 0 6px rgba(115,216,255,.35);}
-  .legend-dot.infra{background:var(--ink-infra);box-shadow:0 0 6px rgba(88,214,141,.35);}
-  .conversation-list{max-height:500px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;}
-  .conversation-entry{border:1px solid var(--border);border-left:4px solid var(--ink-user);background:var(--panel-alt);border-radius:2px;padding:9px 11px;}
-  .conversation-entry.infra{border-left-color:var(--ink-infra);background:rgba(88,214,141,.08);}
-  .conversation-entry.user{border-left-color:var(--ink-user);background:rgba(115,216,255,.08);}
-  .conversation-entry .conv-row{display:flex;justify-content:space-between;gap:10px;font-size:10px;color:var(--text-muted);margin-bottom:5px;}
-  .conversation-entry .conv-source{font-family:var(--font-display);text-transform:uppercase;letter-spacing:.05em;font-size:10px;}
-  .conversation-entry.user .conv-source{color:var(--ink-user);}
-  .conversation-entry.infra .conv-source{color:var(--ink-infra);}
-  .conversation-entry .conv-text{font-size:12px;line-height:1.45;color:var(--text-primary);word-break:break-word;}
-  .conversation-entry .conv-meta{font-size:10px;color:var(--text-muted);margin-top:5px;}
-
-  .history-list{max-height:640px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;}
-  .history-empty{color:var(--text-muted);font-size:12px;padding:20px 4px;text-align:center;border:1px dashed var(--border);border-radius:2px;}
-
-  .entry{border:1px solid var(--border);border-left:3px solid var(--ink-red);background:var(--panel-alt);border-radius:2px;padding:10px 12px;}
-  .entry .row1{display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:6px;}
-  .entry .freq{font-size:16px;color:var(--ink-amber);font-variant-numeric:tabular-nums;}
-  .entry .tag{
-    display:inline-block;font-family:var(--font-display);text-transform:uppercase;letter-spacing:0.04em;
-    font-size:10.5px;color:var(--ink-red);border:1px solid var(--ink-red);border-radius:2px;padding:2px 6px;margin-bottom:6px;
-  }
-  .entry .desc{font-size:11.5px;line-height:1.45;color:var(--text-primary);}
-
-  .entry.critical{
-    border-left-color:var(--ink-critical);
-    background:var(--ink-critical-dim);
-    box-shadow:0 0 10px rgba(255,46,224,0.25);
-    animation:criticalGlow 1.6s infinite;
-  }
-  .entry.critical .freq{color:var(--ink-critical);}
-  .entry.critical .tag{color:var(--ink-critical);border-color:var(--ink-critical);}
-  @keyframes criticalGlow{
-    0%,100%{box-shadow:0 0 6px rgba(255,46,224,0.2);}
-    50%{box-shadow:0 0 16px rgba(255,46,224,0.55);}
+0.8));
+    duplexState.frame++;
+    duplexState.lastRxAt = Date.now();
+    if (duplexRx) duplexRx.textContent = text.length > 18 ? text.slice(0,18) + '…' : text;
+    if (duplexConfidence) duplexConfidence.textContent = Math.round(duplexState.confidence * 100) + '%';
+    if (duplexFrame) duplexFrame.textContent = duplexState.frame;
+    duplexSetStatus('recepción activa');
   }
 
-  .voice-current{
-    font-size:13px;color:var(--text-primary);
-    background:var(--panel-alt);border:1px solid var(--border);border-radius:2px;
-    padding:10px 12px;margin-bottom:10px;min-height:20px;line-height:1.4;
-  }
-  .voice-alts{display:flex;flex-wrap:wrap;gap:6px;}
-  .voice-chip{
-    font-size:11.5px;padding:5px 10px;border:1px solid var(--border);border-radius:20px;
-    background:var(--panel-alt);color:var(--text-muted);
-  }
-  .voice-chip.top{border-color:var(--ink-teal);color:var(--ink-teal);}
-  .voice-chip.suggestion{border-color:var(--ink-amber);color:var(--ink-amber);}
-  .word-history{max-height:250px;overflow-y:auto;display:flex;flex-direction:column;gap:7px;margin-top:14px;padding-top:12px;border-top:1px dashed var(--border);}
-  .word-entry{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:8px 10px;background:var(--panel-alt);border:1px solid var(--border);border-left:3px solid var(--ink-teal);border-radius:2px;font-size:11.5px;}
-  .word-entry.partial{border-left-color:var(--ink-amber);}
-  .word-entry.user-origin{border-left-color:var(--ink-user);background:rgba(115,216,255,.08);}
-  .word-entry.infra-origin{border-left-color:var(--ink-infra);background:rgba(88,214,141,.10);}
-  .word-entry .origin-badge{font-family:var(--font-display);font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;padding:2px 5px;border:1px solid currentColor;border-radius:3px;margin-right:5px;}
-  .word-entry .translation{display:block;color:var(--text-primary);margin-top:3px;font-size:11px;}
-  .word-entry .translation small{color:var(--text-muted);}
-  .quantum-panel{margin-top:12px;padding:10px 12px;border:1px dashed var(--border);background:rgba(255,255,255,.015);font-size:10.5px;line-height:1.45;color:var(--text-muted);}
-  .quantum-panel strong{color:var(--ink-teal);}
-  .word-entry.event{border-left-color:var(--ink-teal);}
-  .word-entry.event.warning{border-left-color:var(--ink-amber);}
-  .word-entry.event.error{border-left-color:var(--ink-red);}
-  .word-entry .word-time{color:var(--text-muted);font-size:10.5px;}
-  .word-entry .word-text{color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .word-entry .word-meta{color:var(--text-muted);font-size:10.5px;text-align:right;}
-  .duplex-panel{margin-top:12px;padding:12px;border:1px solid var(--border);background:rgba(255,255,255,.018);border-radius:3px;}
-  .duplex-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;}
-  .duplex-cell{background:var(--panel-alt);border:1px solid var(--border);padding:8px 9px;border-radius:3px;}
-  .duplex-label{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);}
-  .duplex-value{margin-top:4px;font-size:12px;color:var(--text-primary);}
-  .duplex-value.rx{color:var(--ink-infra);}
-  .duplex-value.tx{color:var(--ink-user);}
-  .duplex-value.good{color:var(--ink-teal);}
-  .duplex-compose{display:flex;gap:7px;margin-top:9px;}
-  .duplex-compose input{flex:1;min-width:0;background:var(--panel-alt);color:var(--text-primary);border:1px solid var(--border);padding:9px 10px;border-radius:2px;font-family:var(--font-mono);}
-  .duplex-compose button{padding:8px 12px;}
-  .conversation-entry{position:relative;}
-  .conversation-entry.rx{border-left-color:var(--ink-infra);background:rgba(88,214,141,.10);}
-  .conversation-entry.tx{border-left-color:var(--ink-user);background:rgba(115,216,255,.08);}
-  .conversation-entry.hypothesis{border-left-style:dashed;opacity:.96;}
-  .conv-confidence{font-size:9.5px;color:var(--text-muted);margin-top:4px;}
-  @media(max-width:760px){.duplex-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.duplex-compose{flex-direction:column;}}
-  .word-empty{font-size:11.5px;color:var(--text-muted);padding:8px 2px;}
+  // ---------- Receptor Morse de audio en tiempo real ----------
+  // Mide envolvente de energía instantánea sobre la señal de micrófono
+  // y detecta pulsos on/off sin depender del barrido 0-20 Hz.
+  const morseRxState = {
+    envelope: 0,
+    peak: 0.001,
+    noiseFloor: 0.0001,
+    isOn: false,
+    lastChangeTime: 0,
+    currentSymbol: '',
+    accumulatedText: '',
+    pulseDurations: [],
+    silenceDurations: [],
+    lastFinalWordTime: 0
+  };
 
-  .voice-cadence{
-    display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;
-    font-size:11.5px;color:var(--text-muted);margin-bottom:10px;
-    border-left:2px solid var(--border);padding-left:10px;
-  }
-  .voice-cadence .cad-tag{
-    font-family:var(--font-display);text-transform:uppercase;letter-spacing:0.05em;
-    font-size:11px;color:var(--ink-teal);
-  }
-  .voice-cadence.rapid .cad-tag{color:var(--ink-amber);}
-  .voice-cadence.infra .cad-tag{color:var(--ink-red);}
-  .prosody-panel{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0 12px;}
-  .prosody-cell{background:var(--panel-alt);border:1px solid var(--border);padding:9px 10px;border-radius:5px;}
-  .prosody-label{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);}
-  .prosody-value{margin-top:4px;font-size:13px;color:var(--text-primary);font-weight:600;}
-  .prosody-bar{height:3px;background:var(--border);margin-top:6px;overflow:hidden;border-radius:2px;}
-  .prosody-bar span{display:block;height:100%;width:0%;background:var(--ink-teal);transition:width .15s ease;}
-  .prosody-note{font-size:10px;color:var(--text-muted);line-height:1.45;margin-top:7px;}
-  @media(max-width:760px){.prosody-panel{grid-template-columns:repeat(2,minmax(0,1fr));}}
-  .rx-voice-status{margin:8px 0 10px;padding:8px 10px;border:1px dashed var(--border);background:rgba(88,214,141,.05);color:var(--text-muted);font-size:10.5px;line-height:1.4;border-radius:3px;}
-  .rx-voice-status.active{color:var(--ink-infra);border-color:var(--ink-infra);}
-  @media(max-width:900px){body{padding:16px 12px 42px}.layout{grid-template-columns:1fr}.panel{padding:14px}.controls{align-items:stretch}.sens{margin-left:0!important;flex:1 1 190px}.sens input[type=range]{max-width:150px}.readout-row{grid-template-columns:1fr 1fr}.duplex-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
-  @media(max-width:600px){body{padding:10px 8px 30px}.title-block h1{font-size:21px}.title-block .sub{font-size:9px;line-height:1.4}.status-pill{width:100%;justify-content:center}.controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}.controls button{width:100%;min-height:42px}.controls .sens{grid-column:1/-1;width:100%}.readout-row{grid-template-columns:1fr}.readout .value{font-size:18px}canvas{height:190px}.duplex-grid{grid-template-columns:1fr}.duplex-cell[style*="grid-column:span 2"]{grid-column:auto!important}.duplex-compose{flex-direction:column}.duplex-compose button{width:100%;min-height:42px}.history-actions{width:100%}.history-actions button{flex:1 1 100%;min-height:40px}.conversation-list,.history-list{max-height:55vh}.word-history{max-height:38vh}.word-entry{grid-template-columns:1fr;gap:5px}.word-entry .word-meta{text-align:left}.voice-alts{max-height:120px;overflow:auto}}
-  @media(max-width:380px){.controls{grid-template-columns:1fr}.controls .sens{grid-column:auto}.panel{padding:11px}.duplex-grid{gap:6px}.duplex-cell{padding:7px}.title-block h1{font-size:18px}}
+  function morseFeedAudio(data, sampleRate, nowMs) {
+    if (!sweeping && !calibrating) return;
+    // Calculamos envolvente peak/rms rápida
+    let localSum = 0;
+    for (let i = 0; i < data.length; i++) localSum += Math.abs(data[i]);
+    const avg = localSum / data.length;
 
-  ::-webkit-scrollbar{width:8px;}
-  ::-webkit-scrollbar-track{background:var(--panel-alt);}
-  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
-  @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;}}
-</style>
-</head>
-<body>
-<div class="wrap">
+    // Seguimiento adaptativo de suelo de ruido y pico
+    morseRxState.envelope = morseRxState.envelope * 0.7 + avg * 0.3;
+    morseRxState.peak = Math.max(morseRxState.peak * 0.999, morseRxState.envelope);
+    morseRxState.noiseFloor = Math.min(morseRxState.noiseFloor * 1.001, Math.max(1e-5, morseRxState.envelope));
 
-  <header>
-    <div class="title-block">
-      <h1>Registrador de Barrido 0–20 Hz</h1>
-      <div class="sub">Análisis de modulación de amplitud del sonido ambiente · micrófono en vivo</div>
-    </div>
-    <div class="status-pill standby" id="statusPill">
-      <span class="dot"></span><span id="statusText">En espera</span>
-    </div>
-  </header>
+    const range = Math.max(1e-4, morseRxState.peak - morseRxState.noiseFloor);
+    const threshold = morseRxState.noiseFloor + range * 0.35; // Histeresis del 35% del rango dinámico
 
-  <div class="layout">
-    <div>
-      <div class="panel">
-        <div class="controls">
-          <button class="primary" id="btnStart">Iniciar barrido</button>
-          <button id="btnStop" disabled>Detener</button>
-          <button class="danger" id="btnRefresh">Refresh · reiniciar experimento</button>
-          <label class="sens" style="margin-left:0;gap:6px;cursor:pointer;">
-            <input type="checkbox" id="soundToggle" checked style="accent-color:var(--ink-amber);">
-            <span>🔊 Lectura en voz alta (RX/TX)</span>
-          </label>
-          <label class="sens" style="margin-left:0;gap:6px;cursor:pointer;">
-            <span>Voz</span>
-            <select id="ttsVoice" style="max-width:180px;background:var(--panel-alt);color:var(--text-primary);border:1px solid var(--border);padding:6px 8px;border-radius:2px;">
-              <option value="">Automática</option>
-            </select>
-          </label>
-          <div class="sens">
-            <span>Velocidad voz</span>
-            <input type="range" id="ttsRate" min="0.65" max="1.35" step="0.05" value="0.95">
-            <span id="ttsRateVal">0.95×</span>
-          </div>
-          <div class="sens">
-            <span>Sensibilidad</span>
-            <input type="range" id="sensRange" min="1.5" max="5" step="0.1" value="3">
-            <span id="sensVal">3.0×</span>
-          </div>
-          <div class="sens">
-            <span>Amplificación mic</span>
-            <input type="range" id="ampRange" min="1" max="8" step="0.5" value="2">
-            <span id="ampVal">2.0×</span>
-          </div>
-          <label class="sens" style="gap:6px;cursor:pointer;">
-            <input type="checkbox" id="agcToggle" checked style="accent-color:var(--ink-amber);">
-            <span>AGC (nivela voz floja)</span>
-          </label>
-        </div>
+    const newState = morseRxState.envelope > threshold;
+    const unitMs = 1200 / morseWpm;
 
-        <div class="readout-row">
-          <div class="readout">
-            <div class="label">Frecuencia pico</div>
-            <div class="value" id="readFreq">—</div>
-          </div>
-          <div class="readout">
-            <div class="label">Nivel vs. línea base</div>
-            <div class="value" id="readLevel">—</div>
-          </div>
-          <div class="readout">
-            <div class="label">Ventana de análisis</div>
-            <div class="value small" id="readWindow">—</div>
-          </div>
-        </div>
+    if (newState !== morseRxState.isOn) {
+      const duration = nowMs - morseRxState.lastChangeTime;
+      morseRxState.lastChangeTime = nowMs;
+      morseRxState.isOn = newState;
 
-        <canvas id="scope" width="1200" height="280"></canvas>
-
-        <div class="disclaimer">
-          Esto <strong>no</strong> mide sonido audible por debajo de 20 Hz de forma directa (el hardware de micrófono
-          estándar no capta bien ese rango). En su lugar analiza la <strong>envolvente de amplitud</strong> del audio
-          captado —cómo pulsa o varía el volumen ambiente— y busca periodicidades entre 0 y 20 Hz mediante el
-          algoritmo de Goertzel. Es una herramienta exploratoria de procesamiento de señales, no un instrumento
-          calibrado de infrasonido ni sísmico.
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="history-head">
-          <h2>Modulación de palabras</h2>
-          <span class="history-count" id="voiceStatus">inactivo</span>
-        </div>
-        <div id="voiceUnsupported" class="history-empty" style="display:none;">
-          Este navegador no soporta reconocimiento de voz en vivo (Web Speech API). Probá en Chrome o Edge.
-        </div>
-        <div id="voiceBox" style="display:none;">
-          <div class="disclaimer" style="margin-top:0;margin-bottom:12px;border-top:none;padding-top:0;">
-            La amplificación mic + AGC solo afecta al canal <strong>audible</strong> (prosodia y
-            reconocimiento offline por WebSocket), útil con voz floja o ambientes ruidosos. El barrido
-            0–20&nbsp;Hz y el receptor Morse usan un segundo canal con la señal <strong>cruda</strong> del
-            micrófono, sin ganancia ni compresor, para no distorsionar los bordes de encendido/apagado ni la
-            modulación de amplitud que necesitan medir. El reconocimiento de voz nativo del navegador (Web
-            Speech API online) capta el micrófono por su cuenta y tampoco pasa por ninguna de las dos cadenas.
-          </div>
-          <div class="voice-current" id="voiceCurrent">Sin voz detectada todavía.</div>
-          <div class="voice-cadence" id="voiceCadence"></div>
-          <div class="prosody-panel" aria-label="Análisis de prosodia">
-            <div class="prosody-cell"><div class="prosody-label">Altura estimada</div><div class="prosody-value" id="prosodyPitch">—</div><div class="prosody-bar"><span id="prosodyPitchBar"></span></div></div>
-            <div class="prosody-cell"><div class="prosody-label">Intensidad</div><div class="prosody-value" id="prosodyIntensity">—</div><div class="prosody-bar"><span id="prosodyIntensityBar"></span></div></div>
-            <div class="prosody-cell"><div class="prosody-label">Ritmo / pulsos</div><div class="prosody-value" id="prosodyRate">—</div><div class="prosody-bar"><span id="prosodyRateBar"></span></div></div>
-            <div class="prosody-cell"><div class="prosody-label">Perfil melódico</div><div class="prosody-value" id="prosodyContour">—</div><div class="prosody-bar"><span id="prosodyContourBar"></span></div></div>
-          </div>
-          <div class="prosody-note" id="prosodyNote">Estimación en tiempo real de altura, intensidad, ritmo y contorno. Sirve para describir la prosodia; no es un análisis fonético clínico.</div>
-          <div class="voice-alts" id="voiceAlts"></div>
-          <div class="history-head" style="margin-top:12px;margin-bottom:8px;">
-            <h2>Decodificación multilingüe</h2>
-            <span class="history-count" id="translationStatus">auto → castellano</span>
-          </div>
-          <div class="controls" style="margin-bottom:8px;">
-            <label class="sens" style="margin-left:0;">Idioma de salida
-              <select id="targetLanguage" style="background:var(--panel-alt);color:var(--text-primary);border:1px solid var(--border);padding:7px 9px;border-radius:2px;">
-                <option value="es">Castellano</option><option value="en">English</option><option value="pt">Português</option><option value="fr">Français</option><option value="it">Italiano</option><option value="de">Deutsch</option>
-              </select>
-            </label>
-            <label class="sens" style="margin-left:0;">Fuente
-              <select id="sourceLanguage" style="background:var(--panel-alt);color:var(--text-primary);border:1px solid var(--border);padding:7px 9px;border-radius:2px;">
-                <option value="auto">Auto</option><option value="es">Español</option><option value="en">English</option><option value="pt">Português</option><option value="fr">Français</option><option value="it">Italiano</option><option value="de">Deutsch</option>
-              </select>
-            </label>
-            <button id="btnTranslateHistory">Traducir historial</button>
-          </div>
-          <div class="quantum-panel"><strong>Q-Decode / fusión cuántico-inspirada:</strong> combina evidencia de frecuencia, estabilidad temporal, coherencia de fase de la envolvente y probabilidad lingüística para puntuar hipótesis. No es comunicación cuántica real ni permite recibir información a distancia sin un canal físico medible.</div>
-          <div class="history-head" style="margin-top:16px;margin-bottom:8px;">
-            <h2>Historial de palabras</h2>
-            <span class="history-count" id="wordHistoryCount">0 detecciones</span>
-          </div>
-          <div class="word-history" id="wordHistoryList">
-            <div class="word-empty">Las palabras y sugerencias audibles aparecerán aquí durante el barrido.</div>
-          </div>
-          <div class="history-head" style="margin-top:16px;margin-bottom:8px;">
-            <h2>Eventos de detección</h2>
-            <span class="history-count" id="wordEventCount">0 eventos</span>
-          </div>
-          <div class="word-history" id="wordEventList">
-            <div class="word-empty">Los cambios de estado del reconocimiento aparecerán aquí.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="history-head">
-        <div>
-          <h2>Conversación bidireccional</h2>
-          <div class="history-count" id="conversationCount">0 mensajes</div>
-        </div>
-        <div class="history-actions">
-          <button id="btnRecordSession">⏺ Grabar sesión (audio)</button>
-          <button id="btnDownloadSessionJson">Descargar sesión completa (JSON)</button>
-          <button id="btnDownloadConversation">Descargar historial (CSV)</button>
-          <button id="btnClearConversation">Limpiar</button>
-        </div>
-      </div>
-      <div class="legend">
-        <span class="legend-item"><span class="legend-dot user"></span>Celeste · transmisión local</span>
-        <span class="legend-item"><span class="legend-dot infra"></span>Verde · recepción del canal de baja frecuencia</span>
-      </div>
-      <div class="duplex-panel">
-        <div class="history-head" style="margin-bottom:8px;">
-          <h2>Enlace bidireccional · Código Morse (ITU estándar)</h2>
-          <span class="history-count" id="duplexProtocolStatus">esperando señal</span>
-        </div>
-        <div class="rx-voice-status" id="rxVoiceStatus" aria-live="polite">🔈 salida de audio preparada · esperando RX</div>
-        <div class="duplex-grid">
-          <div class="duplex-cell"><div class="duplex-label">TX · mi mensaje</div><div class="duplex-value tx" id="duplexTx">—</div></div>
-          <div class="duplex-cell"><div class="duplex-label">RX · canal</div><div class="duplex-value rx" id="duplexRx">—</div></div>
-          <div class="duplex-cell"><div class="duplex-label">Confianza RX</div><div class="duplex-value good" id="duplexConfidence">—</div></div>
-          <div class="duplex-cell"><div class="duplex-label">Palabras RX</div><div class="duplex-value" id="duplexFrame">0</div></div>
-        </div>
-        <div class="duplex-compose">
-          <input id="duplexMessageInput" type="text" maxlength="120" placeholder="Mensaje para transmitir en Morse…">
-          <button id="btnDuplexSend">Transmitir</button>
-        </div>
-        <label class="sens" style="margin:9px 0 0;gap:8px;">
-          <span>Velocidad</span>
-          <input type="range" id="wpmRange" min="5" max="30" step="1" value="15">
-          <span id="wpmVal">15 PPM</span>
-        </label>
-        <div class="prosody-note">
-          Emite un tono real encendido/apagado (sidetone a 700&nbsp;Hz) siguiendo la temporización estándar de Morse
-          (punto = 1 unidad, raya = 3 unidades, con la fórmula PARIS: unidad<sub>ms</sub> = 1200 / PPM). La recepción
-          mide la duración de cada pulso y silencio del micrófono en vivo y los clasifica en punto/raya; el resultado
-          se etiqueta como <strong>hipótesis</strong> hasta acumular una palabra completa. No es comunicación cuántica
-          ni recepción a distancia sin un canal físico — es Morse real transmitido y captado por audio.
-        </div>
-        <div class="history-head" style="margin-top:14px;margin-bottom:8px;">
-          <h2>Traductor de patrón recibido</h2>
-          <span class="history-count" id="patternDecodeStatus">sin patrón</span>
-        </div>
-        <div class="prosody-note" style="margin-top:0;">
-          Pegá acá un patrón recibido. Si es <strong>código Morse</strong> (solo puntos, rayas, barras y espacios —
-          ej.: <code>-- .- -.. --- / -.-. .... -.- -.. ..-.</code>) se decodifica de forma exacta con la tabla ITU
-          estándar. Si en cambio es texto con letras (ej. de un canal que ya llegó pre-decodificado con otro cifrado),
-          el sistema prueba automáticamente los desplazamientos de alfabeto posibles y se queda con el que arma más
-          palabras reconocibles. Se muestra siempre el patrón original junto a la traducción encontrada.
-        </div>
-        <div class="duplex-compose">
-          <input id="patternInput" type="text" maxlength="200" placeholder="Pegar patrón recibido, ej: -- .- -.. --- / -.-. .... -.- -.. ..-.">
-          <button id="btnDecodePattern">Traducir patrón</button>
-        </div>
-        <div class="duplex-grid" style="margin-top:9px;">
-          <div class="duplex-cell" style="grid-column:span 2;"><div class="duplex-label">Original</div><div class="duplex-value" id="patternOriginal">—</div></div>
-          <div class="duplex-cell" style="grid-column:span 2;"><div class="duplex-label">Traducido a palabras</div><div class="duplex-value good" id="patternDecoded">—</div></div>
-        </div>
-        <div class="prosody-note" style="margin-top:8px;">
-          El desplazamiento automático elegido es la mejor aproximación, no una certeza. Si no coincide con lo esperado,
-          navegá manualmente los 49 desplazamientos posibles del alfabeto hasta encontrar el que arme el mensaje real.
-        </div>
-        <div class="duplex-compose" style="margin-top:6px;">
-          <button id="btnPatternPrev">‹ Candidato anterior</button>
-          <button id="btnPatternNext">Candidato siguiente ›</button>
-        </div>
-      </div>
-      <div class="conversation-list" id="conversationList">
-        <div class="history-empty">La conversación aparecerá aquí: tu voz en celeste y las detecciones atribuidas al canal infrasónico en verde.</div>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="history-head">
-        <h2>Historial de anomalías</h2>
-        <span class="history-count" id="historyCount">0 registros</span>
-      </div>
-      <div class="history-list" id="historyList">
-        <div class="history-empty">Sin detecciones todavía. El historial se llena cuando el barrido encuentra y clasifica un patrón, y se reinicia con "Refresh".</div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script>
-(() => {
-  // ---------- Constantes de análisis ----------
-  const FREQ_MIN = 0.5, FREQ_MAX = 20, FREQ_STEP = 0.5;
-  const BINS = [];
-  for (let f = FREQ_MIN; f <= FREQ_MAX + 1e-9; f += FREQ_STEP) BINS.push(Math.round(f * 10) / 10);
-
-  const CALIBRATION_MS = 5000;
-  const ANALYSIS_INTERVAL_MS = 300;
-  const WINDOW_SECONDS = 6;
-  const SUSTAIN_TICKS_REQUIRED = 3;
-  const BASELINE_EMA_ALPHA = 0.03;
-
-  // ---------- Estado ----------
-  // Dos cadenas de audio independientes desde el mismo micrófono:
-  //  - "audible": pasa por ganancia + AGC, alimenta voz (Web Speech / offline) y prosodia.
-  //  - "infra/morse": señal cruda, sin ganancia ni compresor, alimenta el barrido 0–20 Hz
-  //    y el receptor Morse. El AGC deforma justo lo que estos dos necesitan medir
-  //    (bordes de encendido/apagado y modulación de amplitud lenta), así que no la tocan.
-  let audioCtx = null, mediaStream = null, sourceNode = null, processorNode = null, silentGain = null;
-  let rawProcessorNode = null, rawSilentGain = null;
-  const soundToggle = document.getElementById('soundToggle');
-  const ttsVoiceSelect = document.getElementById('ttsVoice'), ttsRateRange = document.getElementById('ttsRate'), ttsRateVal = document.getElementById('ttsRateVal'), rxVoiceStatus = document.getElementById('rxVoiceStatus');
-  let ttsRate = 0.95, ttsSpeaking = false, ttsQueue = Promise.resolve();
-
-  function populateTTSVoices(){
-    if(!ttsVoiceSelect || !('speechSynthesis' in window)) return;
-    const voices=window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : [], current=ttsVoiceSelect.value;
-    ttsVoiceSelect.innerHTML='<option value="">Automática</option>';
-    voices.forEach((v,i)=>{const o=document.createElement('option');o.value=String(i);o.textContent=(v.name||'Voz')+' · '+(v.lang||'');ttsVoiceSelect.appendChild(o);});
-    if([...ttsVoiceSelect.options].some(o=>o.value===current)) ttsVoiceSelect.value=current;
-  }
-  populateTTSVoices(); if('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged=populateTTSVoices;
-  if(ttsRateRange) ttsRateRange.addEventListener('input',()=>{ttsRate=parseFloat(ttsRateRange.value)||.95;if(ttsRateVal)ttsRateVal.textContent=ttsRate.toFixed(2)+'×';});
-  function setRXVoiceStatus(text,active=false){if(rxVoiceStatus){rxVoiceStatus.textContent=text;rxVoiceStatus.classList.toggle('active',!!active);}}
-  function speakText(text,lang='es-ES',label='RX'){
-    const clean=String(text||'').replace(/\s+/g,' ').trim();
-    if(!clean || !soundToggle?.checked || !('speechSynthesis' in window)) return Promise.resolve(false);
-    ttsQueue=ttsQueue.then(()=>new Promise(resolve=>{try{
-      const u=new SpeechSynthesisUtterance(clean);u.lang=lang;u.rate=ttsRate;u.pitch=1;u.volume=.95;
-      const voices=window.speechSynthesis.getVoices?window.speechSynthesis.getVoices():[],selected=ttsVoiceSelect?.value;
-      if(selected!==''&&voices[Number(selected)])u.voice=voices[Number(selected)];else{const p=(lang||'es').toLowerCase().split('-')[0],v=voices.find(x=>(x.lang||'').toLowerCase().startsWith(p));if(v)u.voice=v;}
-      ttsSpeaking=true;setRXVoiceStatus('🔊 leyendo '+label+': '+clean,true);
-      u.onend=()=>{ttsSpeaking=false;setRXVoiceStatus('🔈 salida de audio lista · esperando RX');resolve(true);};u.onerror=()=>{ttsSpeaking=false;setRXVoiceStatus('⚠️ no se pudo reproducir la lectura');resolve(false);};
-      window.speechSynthesis.speak(u);
-    }catch(_){ttsSpeaking=false;resolve(false);}})); return ttsQueue;
-  }
-  async function speakOriginalAndTranslation(original,translated,detectedLang='es',targetLang='es'){
-    const a=String(original||'').trim(),b=String(translated||'').trim();if(!a)return;
-    const langMap={en:'en-US',pt:'pt-BR',fr:'fr-FR',it:'it-IT',de:'de-DE',es:'es-ES'};
-    await speakText('Recibido: '+a,langMap[detectedLang]||'es-ES','RX original');
-    if(b&&b.toLowerCase()!==a.toLowerCase())await speakText('Traducción: '+b,langMap[targetLang]||'es-ES','RX traducción');
-  }
-  let alertAudioCtx = null; // contexto de audio separado, solo para los beeps (no interfiere con el análisis de frecuencia)
-  let lastWordBeepAt = 0;
-
-  function getAlertAudioCtx() {
-    if (!alertAudioCtx) {
-      try { alertAudioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-      catch (_) { return null; }
-    }
-    if (alertAudioCtx.state === 'suspended') alertAudioCtx.resume().catch(() => {});
-    return alertAudioCtx;
-  }
-
-  // Beep corto y suave para no ser invasivo. isFinal usa un tono más alto/definido
-  // que el "en curso", para distinguir auditivamente ambos casos.
-  function playWordBeep(isFinal) {
-    if (!soundToggle || !soundToggle.checked) return;
-    const now = Date.now();
-    if (now - lastWordBeepAt < 250) return; // evita solapar beeps en ráfagas de resultados parciales
-    lastWordBeepAt = now;
-    const ctx = getAlertAudioCtx();
-    if (!ctx) return;
-    const t0 = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = isFinal ? 880 : 660;
-    gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(isFinal ? 0.18 : 0.10, t0 + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + (isFinal ? 0.16 : 0.09));
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(t0);
-    osc.stop(t0 + (isFinal ? 0.18 : 0.11));
-  }
-  // ---------- Amplificación de entrada (mejora la captación de voz débil) ----------
-  let micGain = null, compressorNode = null;
-  let micAmplification = 2.0;   // ganancia lineal aplicada a la señal cruda del micrófono
-  let agcEnabled = true;        // compresor de rango dinámico: nivela voces flojas sin saturar picos
-  const ampRange = document.getElementById('ampRange');
-  const ampVal = document.getElementById('ampVal');
-  const agcToggle = document.getElementById('agcToggle');
-  if (ampRange) {
-    ampRange.addEventListener('input', () => {
-      micAmplification = parseFloat(ampRange.value);
-      ampVal.textContent = micAmplification.toFixed(1) + '×';
-      if (micGain) micGain.gain.value = micAmplification;
-    });
-  }
-  if (agcToggle) {
-    agcToggle.addEventListener('change', () => {
-      agcEnabled = agcToggle.checked;
-      applyCompressorState();
-    });
-  }
-  function applyCompressorState() {
-    if (!compressorNode) return;
-    if (agcEnabled) {
-      // ratio/threshold moderados: realza voz baja sin "aplastar" el resto de la señal
-      compressorNode.threshold.value = -45;
-      compressorNode.knee.value = 24;
-      compressorNode.ratio.value = 8;
-      compressorNode.attack.value = 0.003;
-      compressorNode.release.value = 0.2;
-    } else {
-      // ratio 1 = compresor efectivamente transparente (paso directo)
-      compressorNode.threshold.value = 0;
-      compressorNode.ratio.value = 1;
-    }
-  }
-
-  let offlineSocket = null, offlineMode = false, offlineConfigured = false;
-  let sampleRateEff = 0;
-  let envBuffer = [];        // circular buffer of envelope samples
-  let envCapacity = 0;
-  let calibrating = false, sweeping = false, anomalyLocked = false;
-  let calibrationStart = 0;
-  let baseline = new Array(BINS.length).fill(0);
-  let baselineInit = new Array(BINS.length).fill(false);
-  let hitStreak = new Array(BINS.length).fill(0);
-  let cooldown = new Array(BINS.length).fill(0);
-  let lastMagnitudes = new Array(BINS.length).fill(0);
-  let lastActiveFreq = null;
-  let recentModulations = [];
-  let analysisTimer = null;
-  let sweepPhase = 0;
-  let history = [];
-  let wordHistory = [];
-  let translationCache = new Map();
-  let translationBusy = false;
-  let quantumState = { coherence:0, entropy:1, confidence:0, source:'user' };
-  let prosodyState = { pitch:0, intensityDb:-60, rate:0, contour:'estable', voicing:0, pause:false, at:0, pitchHistory:[] };
-  let lastProsodySnapshot = null;
-  let lastWordHistoryKey = '';
-  let lastWordHistoryAt = 0;
-  let wordEvents = [];
-  let lastWordEventKey = '';
-  let lastWordEventAt = 0;
-  let conversationHistory = [];
-  let lastConversationByChannel = new Map();
-  let sensitivity = 3.0;
-  let flashTimeout = null;
-  const COOLDOWN_MS = 4000;
-  const FLASH_MS = 1400;
-  // Por encima de este umbral (dentro del rango 0-20Hz) suelen aparecer sonidos
-  // "nítidos" normales del entorno (voz, palmadas, consonantes) que no son
-  // anomalías reales: se exige un nivel mucho más alto para que disparen algo ahí.
-  const HIGH_BAND_CUTOFF = 15;
-  const HIGH_BAND_MULT = 2.2;
-  // Más allá del umbral normal de disparo, esto marca una anomalía como "crítica"
-  const CRITICAL_MULTIPLIER = 1.8;
-
-  // ---------- DOM ----------
-  const $ = id => document.getElementById(id);
-  const statusPill = $('statusPill'), statusText = $('statusText');
-  const btnStart = $('btnStart'), btnStop = $('btnStop'), btnRefresh = $('btnRefresh');
-  const sensRange = $('sensRange'), sensVal = $('sensVal');
-  const readFreq = $('readFreq'), readLevel = $('readLevel'), readWindow = $('readWindow');
-  const canvas = $('scope'), ctx = canvas.getContext('2d');
-  const historyList = $('historyList'), historyCount = $('historyCount');
-  const voiceStatus = $('voiceStatus'), voiceUnsupported = $('voiceUnsupported'), voiceBox = $('voiceBox');
-  const voiceCurrent = $('voiceCurrent'), voiceAlts = $('voiceAlts'), voiceCadence = $('voiceCadence');
-  const prosodyPitch=$('prosodyPitch'), prosodyIntensity=$('prosodyIntensity'), prosodyRate=$('prosodyRate'), prosodyContour=$('prosodyContour'), prosodyPitchBar=$('prosodyPitchBar'), prosodyIntensityBar=$('prosodyIntensityBar'), prosodyRateBar=$('prosodyRateBar'), prosodyContourBar=$('prosodyContourBar'), prosodyNote=$('prosodyNote');
-  const wordHistoryList = $('wordHistoryList'), wordHistoryCount = $('wordHistoryCount');
-  const targetLanguage = $('targetLanguage'), sourceLanguage = $('sourceLanguage'), btnTranslateHistory = $('btnTranslateHistory'), translationStatus = $('translationStatus');
-  const wordEventList = $('wordEventList'), wordEventCount = $('wordEventCount');
-  const conversationList = $('conversationList'), conversationCount = $('conversationCount');
-  const btnDownloadConversation = $('btnDownloadConversation'), btnClearConversation = $('btnClearConversation');
-  const patternInput = $('patternInput'), btnDecodePattern = $('btnDecodePattern');
-  const patternOriginal = $('patternOriginal'), patternDecoded = $('patternDecoded'), patternDecodeStatus = $('patternDecodeStatus');
-  const btnPatternPrev = $('btnPatternPrev'), btnPatternNext = $('btnPatternNext');
-  const btnRecordSession = $('btnRecordSession'), btnDownloadSessionJson = $('btnDownloadSessionJson');
-
-  sensRange.addEventListener('input', () => {
-    sensitivity = parseFloat(sensRange.value);
-    sensVal.textContent = sensitivity.toFixed(1) + '×';
-  });
-
-  // ---------- Utilidades de estado visual ----------
-  function setStatus(mode, text) {
-    statusPill.className = 'status-pill ' + mode;
-    statusText.textContent = text;
-  }
-
-  // Una palabra puede alternar entre la cadencia silábica (aprox. 3–8 Hz) y
-  // transitorios de articulación rápidos. Guardamos ambas lecturas durante unos
-  // segundos, en vez de quedarnos solo con el último pico del barrido.
-  const MODULATION_MEMORY_MS = 2800;
-  function recordModulation(freq, ratio) {
-    const now = performance.now();
-    recentModulations = recentModulations.filter(sample => now - sample.at <= MODULATION_MEMORY_MS);
-    if (ratio >= 1.4) recentModulations.push({ freq, ratio, at: now });
-    if (recentModulations.length > 40) recentModulations.splice(0, recentModulations.length - 40);
-  }
-
-  function getModulationProfile() {
-    const now = performance.now();
-    recentModulations = recentModulations.filter(sample => now - sample.at <= MODULATION_MEMORY_MS);
-    const syllabic = recentModulations.filter(sample => sample.freq >= 3 && sample.freq <= 8);
-    const articulation = recentModulations.filter(sample => sample.freq >= 16 && sample.freq <= 20);
-    if (syllabic.length && articulation.length) {
-      const low = syllabic[syllabic.length - 1].freq.toFixed(1);
-      const high = articulation[articulation.length - 1].freq.toFixed(1);
-      return {
-        combined: true,
-        label: low + ' Hz + ' + high + ' Hz',
-        cadence: {
-          tag: 'MODULACIÓN COMPUESTA',
-          label: 'Cadencia de habla posible y articulación rápida',
-          desc: 'Se observaron recientemente una cadencia silábica y una modulación rápida. Esta combinación respalda que una hipótesis de palabra incompleta sea audible, aunque no aumenta la confianza real informada por el reconocimiento de voz.'
+      if (!newState) {
+        // Fin de un pulso (ON -> OFF)
+        morseRxState.pulseDurations.push(duration);
+        if (duration < unitMs * 2.1) {
+          morseRxState.currentSymbol += '.';
+        } else if (duration >= unitMs * 2.1) {
+          morseRxState.currentSymbol += '-';
         }
+        // Emitir hipótesis inmediata del símbolo
+        const currentLetter = MORSE_REVERSE[morseRxState.currentSymbol] || '?';
+        updateDuplexRX((morseRxState.accumulatedText + ' ' + currentLetter).trim(), 0.65);
+      } else {
+        // Fin de un silencio (OFF -> ON)
+        morseRxState.silenceDurations.push(duration);
+        if (duration > unitMs * 2.5 && morseRxState.currentSymbol) {
+          // Espacio entre letras -> decodificar letra actual
+          const decodedChar = MORSE_REVERSE[morseRxState.currentSymbol] || '';
+          if (decodedChar) {
+            morseRxState.accumulatedText += decodedChar;
+            morseRxState.currentSymbol = '';
+            updateDuplexRX(morseRxState.accumulatedText, 0.85);
+          }
+        }
+        if (duration > unitMs * 5.5 && morseRxState.accumulatedText) {
+          // Espacio entre palabras -> cerrar palabra actual
+          if (!morseRxState.accumulatedText.endsWith(' ')) {
+            morseRxState.accumulatedText += ' ';
+            updateDuplexRX(morseRxState.accumulatedText, 0.92);
+          }
+        }
+      }
+    } else if (!morseRxState.isOn && morseRxState.accumulatedText) {
+      // Silencio prolongado sin cambio de estado
+      const silenceDuration = nowMs - morseRxState.lastChangeTime;
+      if (silenceDuration > unitMs * 7.5) {
+        // Cierre de palabra/mensaje completo recibido
+        let finalText = morseRxState.accumulatedText.trim();
+        if (morseRxState.currentSymbol) {
+          finalText += MORSE_REVERSE[morseRxState.currentSymbol] || '';
+          morseRxState.currentSymbol = '';
+        }
+        if (finalText && (nowMs - morseRxState.lastFinalWordTime > 1200)) {
+          morseRxState.lastFinalWordTime = nowMs;
+          updateDuplexRX(finalText, 0.98);
+          addConversationMessage('infra', 'RX Morse · ' + finalText, {
+            final: true,
+            direction: 'rx',
+            protocol: true,
+            band: 'Morse ITU'
+          });
+          speakOriginalAndTranslation(finalText, finalText, 'es', targetLanguage?.value || 'es');
+          morseRxState.accumulatedText = '';
+        }
+      }
+    }
+  }
+
+  // ---------- Decodificador / Cifrador con Desplazamiento (Caesar) ----------
+  function shiftText(text, shift) {
+    const alphabet = 'ABCDEFGHIJKLMNÑOPQRSTUVWXYZ';
+    const norm = alphabet.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return String(text || '').toUpperCase().split('').map(ch => {
+      const idx = norm.indexOf(ch);
+      if (idx === -1) return ch;
+      let newIdx = (idx + shift) % norm.length;
+      if (newIdx < 0) newIdx += norm.length;
+      return norm[newIdx];
+    }).join('');
+  }
+
+  // Diccionario básico multidominio para evaluar validez léxica de desplazamientos
+  const COMMON_WORDS_LEXICON = new Set([
+    'EL','LA','LOS','LAS','UN','UNA','UNOS','UNAS','Y','O','QUE','EN','DE','A','CON','POR','PARA','SIN','SOBRE',
+    'SER','ESTAR','HABER','TENER','HACER','IR','VER','DAR','SABER','PODER','DECIR','PENSAR','SENTIR',
+    'SIGNAL','CANAL','FRECUENCIA','MODULACION','SISTEMA','PATRON','ONDA','PRESENCIA','PULSACION',
+    'THE','AND','OF','TO','IN','IS','IT','THAT','FOR','AS','WITH','ON','AT','BY','FROM','OR','AN'
+  ]);
+
+  function scoreTextValidity(text) {
+    const words = String(text || '').toUpperCase().split(/[^A-ZÑ]+/);
+    let hits = 0;
+    for (const w of words) {
+      if (w.length >= 2 && COMMON_WORDS_LEXICON.has(w)) hits++;
+    }
+    return hits;
+  }
+
+  let patternCandidates = [];
+  let patternCandidateIndex = 0;
+
+  function decodeReceivedPattern(input) {
+    const raw = String(input || '').trim();
+    if (!raw) return { original: '—', decoded: '—', status: 'sin entrada' };
+
+    // Caso 1: Código Morse directo (símbolos Morse válidos)
+    if (isMorseLike(raw)) {
+      const text = morseToText(raw);
+      patternCandidates = [{ text, shift: 0, score: 10 }];
+      patternCandidateIndex = 0;
+      return {
+        original: raw,
+        decoded: text || 'no se pudo decodificar',
+        status: 'Morse ITU directo'
       };
     }
-    return { combined:false, label:lastActiveFreq !== null ? lastActiveFreq.toFixed(1) + ' Hz' : '—', cadence:classifySyllabicRate(lastActiveFreq) };
-  }
 
-  // ---------- Goertzel ----------
-  function goertzelMagnitude(samples, sr, targetFreq) {
-    const N = samples.length;
-    const k = Math.round((N * targetFreq) / sr);
-    const w = (2 * Math.PI * k) / N;
-    const cosine = Math.cos(w), sine = Math.sin(w), coeff = 2 * cosine;
-    let q0 = 0, q1 = 0, q2 = 0;
-    for (let i = 0; i < N; i++) {
-      const win = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (N - 1)); // Hann
-      const x = samples[i] * win;
-      q0 = coeff * q1 - q2 + x;
-      q2 = q1; q1 = q0;
-    }
-    const real = q1 - q2 * cosine;
-    const imag = q2 * sine;
-    return Math.sqrt(real * real + imag * imag) / (N / 2 || 1);
-  }
-
-  // ---------- Prosodia ----------
-  function estimatePitch(samples, sr) {
-    const minF=70, maxF=420;
-    const minLag=Math.max(2,Math.floor(sr/maxF)), maxLag=Math.min(samples.length-2,Math.floor(sr/minF));
-    if(maxLag<=minLag) return 0;
-    let bestLag=-1,best=-1;
-    for(let lag=minLag;lag<=maxLag;lag++){
-      let a=0,b=0,c=0;
-      for(let i=0;i<samples.length-lag;i++){const x=samples[i],y=samples[i+lag];a+=x*y;b+=x*x;c+=y*y;}
-      const corr=a/Math.sqrt((b*c)||1e-12); if(corr>best){best=corr;bestLag=lag;}
-    }
-    return best>=0.55 && bestLag>0 ? sr/bestLag : 0;
-  }
-  function classifyProsodicContour(pitch){
-    const h=prosodyState.pitchHistory;
-    if(!pitch) return prosodyState.voicing>.18 ? 'sin tono claro' : 'pausa';
-    h.push(pitch); while(h.length>10) h.shift();
-    if(h.length<4) return 'estable';
-    const r=h.slice(-4), delta=(r[r.length-1]-r[0])/Math.max(r[0],1);
-    if(delta>.10) return 'ascendente'; if(delta<-.10) return 'descendente';
-    const mid=(Math.max(...r)+Math.min(...r))/2;
-    const alt=r.slice(1).reduce((n,v,i)=>n+((v-mid)*(r[i]-mid)<0?1:0),0);
-    return alt>=2 ? 'ondulante' : 'estable';
-  }
-  function updateProsody(samples,sr,rms){
-    const pitch=estimatePitch(samples,sr), db=20*Math.log10(Math.max(rms,1e-6));
-    const voiced=Math.max(0,Math.min(1,(db+55)/35));
-    const now=performance.now(), prev=lastProsodySnapshot;
-    const contour=classifyProsodicContour(pitch);
-    let rate=prosodyState.rate;
-    if(prev){
-      const deltaE=Math.abs(db-prev.intensityDb), dt=Math.max(.01,(now-prev.at)/1000);
-      // Pulsos de energía: aproximación de ritmo silábico, no transcripción de fonemas.
-      const pulse=deltaE>2.2 && voiced>.25;
-      rate=rate*.78+(pulse ? Math.min(8,1/dt) : 0)*.22;
-    }
-    prosodyState={pitch,intensityDb:db,rate,contour,voicing:voiced,pause:voiced<.18,at:now,pitchHistory:prosodyState.pitchHistory};
-    lastProsodySnapshot=prosodyState;
-    if(prosodyPitch) prosodyPitch.textContent=pitch ? pitch.toFixed(0)+' Hz' : '—';
-    if(prosodyIntensity) prosodyIntensity.textContent=db>-55 ? db.toFixed(1)+' dBFS' : 'muy baja';
-    if(prosodyRate) prosodyRate.textContent=rate>0.25 ? rate.toFixed(1)+' pulsos/s' : 'bajo';
-    if(prosodyContour) prosodyContour.textContent=contour;
-    if(prosodyPitchBar) prosodyPitchBar.style.width=Math.min(100,Math.max(0,((pitch-70)/350)*100))+'%';
-    if(prosodyIntensityBar) prosodyIntensityBar.style.width=(voiced*100)+'%';
-    if(prosodyRateBar) prosodyRateBar.style.width=Math.min(100,(rate/6)*100)+'%';
-    if(prosodyContourBar){const map={estable:35,ascendente:80,descendente:65,ondulante:95,'sin tono claro':20,pausa:5};prosodyContourBar.style.width=(map[contour]||20)+'%';}
-    if(prosodyNote) prosodyNote.textContent=(prosodyState.pause?'Pausa o señal débil. ': 'Voz/señal activa. ')+`Contorno ${contour}; altura ${pitch?pitch.toFixed(0)+' Hz':'no estable'}; ritmo estimado ${rate.toFixed(1)} pulsos/s.`;
-  }
-
-  // ---------- Audio setup ----------
-  async function startAudio() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      alert('Este navegador no permite acceso al micrófono (getUserMedia no disponible).');
-      return false;
-    }
-    // Reutilizamos el permiso/stream ya concedido en un inicio anterior:
-    // solo se pide getUserMedia si todavía no lo tenemos o el navegador lo cerró.
-    const streamIsLive = mediaStream && mediaStream.getTracks().some(t => t.readyState === 'live');
-    if (!streamIsLive) {
-      try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-        });
-      } catch (err) {
-        alert('No se pudo acceder al micrófono: ' + err.message);
-        return false;
-      }
-    }
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    sourceNode = audioCtx.createMediaStreamSource(mediaStream);
-
-    const bufferSize = 512;
-    processorNode = audioCtx.createScriptProcessor(bufferSize, 1, 1);
-    sampleRateEff = audioCtx.sampleRate / bufferSize;
-    envCapacity = Math.ceil(WINDOW_SECONDS * sampleRateEff);
-    envBuffer = [];
-
-    // ---- Canal AUDIBLE: voz / prosodia / reconocimiento offline ----
-    // Recibe la señal YA amplificada y compresada (AGC), pensada para que el oído
-    // (y el reconocimiento de voz) entienda bien una voz floja o un ambiente ruidoso.
-    processorNode.onaudioprocess = (e) => {
-      const data = e.inputBuffer.getChannelData(0);
-      let sumSq = 0;
-      for (let i = 0; i < data.length; i++) sumSq += data[i] * data[i];
-      const rms = Math.sqrt(sumSq / data.length);
-      updateProsody(data, audioCtx.sampleRate, rms);
-      if (offlineMode && offlineSocket && offlineSocket.readyState === WebSocket.OPEN) {
-        if (!offlineConfigured) {
-          offlineSocket.send(JSON.stringify({ type:'config', sampleRate:audioCtx.sampleRate }));
-          offlineConfigured = true;
-        }
-        const pcm = new Int16Array(data.length);
-        for (let i = 0; i < data.length; i++) pcm[i] = Math.max(-1, Math.min(1, data[i])) * 32767;
-        offlineSocket.send(pcm.buffer);
-      }
-    };
-
-    // ---- Canal INFRASONIDO / MORSE: barrido 0–20 Hz + receptor Morse ----
-    // Se alimenta de la señal CRUDA del micrófono, antes de la ganancia y del compresor.
-    // El AGC nivela el volumen en tiempo real, que es exactamente lo contrario de lo que
-    // hace falta acá: tanto el barrido (mide cómo varía la amplitud) como el Morse (mide
-    // bordes de encendido/apagado de un tono) necesitan la envolvente real, sin alisar.
-    rawProcessorNode = audioCtx.createScriptProcessor(bufferSize, 1, 1);
-    rawProcessorNode.onaudioprocess = (e) => {
-      const data = e.inputBuffer.getChannelData(0);
-      let sumSq = 0;
-      for (let i = 0; i < data.length; i++) sumSq += data[i] * data[i];
-      const rms = Math.sqrt(sumSq / data.length);
-      morseFeedAudio(data, audioCtx.sampleRate, performance.now());
-      envBuffer.push(rms);
-      if (envBuffer.length > envCapacity) envBuffer.shift();
-    };
-
-    // Cadena de amplificación: sourceNode -> ganancia ajustable -> compresor (AGC) -> analizador audible.
-    micGain = audioCtx.createGain();
-    micGain.gain.value = micAmplification;
-    compressorNode = audioCtx.createDynamicsCompressor();
-    applyCompressorState();
-
-    // silent path required in some browsers for onaudioprocess to fire
-    silentGain = audioCtx.createGain();
-    silentGain.gain.value = 0;
-    sourceNode.connect(micGain);
-    micGain.connect(compressorNode);
-    compressorNode.connect(processorNode);
-    processorNode.connect(silentGain);
-    silentGain.connect(audioCtx.destination);
-
-    // Segundo camino, en paralelo y sin pasar por micGain/compressorNode: señal cruda
-    // directa desde el micrófono hacia el canal infrasonido/Morse.
-    rawSilentGain = audioCtx.createGain();
-    rawSilentGain.gain.value = 0;
-    sourceNode.connect(rawProcessorNode);
-    rawProcessorNode.connect(rawSilentGain);
-    rawSilentGain.connect(audioCtx.destination);
-
-    readWindow.textContent = WINDOW_SECONDS + ' s · ' + sampleRateEff.toFixed(1) + ' Hz muestreo';
-    return true;
-  }
-
-  function stopAudio() {
-    if (processorNode) { processorNode.disconnect(); processorNode.onaudioprocess = null; }
-    if (rawProcessorNode) { rawProcessorNode.disconnect(); rawProcessorNode.onaudioprocess = null; }
-    if (compressorNode) compressorNode.disconnect();
-    if (micGain) micGain.disconnect();
-    if (sourceNode) sourceNode.disconnect();
-    if (silentGain) silentGain.disconnect();
-    if (rawSilentGain) rawSilentGain.disconnect();
-    if (audioCtx) audioCtx.close();
-    // OJO: no detenemos mediaStream.getTracks() a propósito — así el permiso
-    // del micrófono queda concedido y el próximo "Iniciar barrido" no lo vuelve a pedir.
-    audioCtx = null; sourceNode = null; processorNode = null; micGain = null; compressorNode = null;
-    rawProcessorNode = null; rawSilentGain = null;
-    offlineConfigured = false;
-  }
-
-  // ---------- Ciclo de análisis ----------
-  function analysisTick() {
-    if (envBuffer.length < Math.min(envCapacity, sampleRateEff * 1.5)) return; // esperar suficientes muestras
-
-    const samples = envBuffer.slice(-envCapacity);
-    // restar la media para evitar que el componente DC domine el bin más bajo
-    const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
-    const centered = samples.map(v => v - mean);
-
-    const mags = BINS.map(f => goertzelMagnitude(centered, sampleRateEff, f));
-    lastMagnitudes = mags;
-
-    if (calibrating) {
-      for (let i = 0; i < BINS.length; i++) {
-        baseline[i] = baselineInit[i] ? baseline[i] * 0.7 + mags[i] * 0.3 : mags[i];
-        baselineInit[i] = true;
-      }
-      const remaining = Math.max(0, CALIBRATION_MS - (performance.now() - calibrationStart));
-      setStatus('calibrating', 'Calibrando línea base… ' + Math.ceil(remaining / 1000) + 's');
-      drawScope(mags, -1);
-      if (remaining <= 0) {
-        calibrating = false;
-        sweeping = true;
-        setStatus('sweeping', 'Barriendo 0–20 Hz');
-      }
-      return;
-    }
-
-    if (!sweeping) return;
-
-    // detección
-    const now = performance.now();
-    let worstIdx = -1, worstRatio = 0;
-    for (let i = 0; i < BINS.length; i++) {
-      const base = Math.max(baseline[i], 1e-6);
-      const ratio = mags[i] / base;
-      const inCooldown = now < cooldown[i];
-      const effThresh = BINS[i] > HIGH_BAND_CUTOFF ? sensitivity * HIGH_BAND_MULT : sensitivity;
-      if (ratio >= effThresh && !inCooldown) {
-        hitStreak[i]++;
-      } else {
-        hitStreak[i] = 0;
-        if (!inCooldown) {
-          baseline[i] = baseline[i] * (1 - BASELINE_EMA_ALPHA) + mags[i] * BASELINE_EMA_ALPHA;
-        }
-      }
-      if (ratio > worstRatio) { worstRatio = ratio; worstIdx = i; }
-    }
-
-    readFreq.textContent = BINS[worstIdx].toFixed(1) + ' Hz';
-    readLevel.textContent = worstRatio.toFixed(2) + '×';
-    lastActiveFreq = BINS[worstIdx];
-    recordModulation(lastActiveFreq, worstRatio);
-
-    drawScope(mags, worstIdx);
-
-    if (hitStreak[worstIdx] >= SUSTAIN_TICKS_REQUIRED) {
-      triggerAnomaly(worstIdx, mags);
-    }
-  }
-
-  // ---------- Clasificación post-detección ----------
-  function classifyPattern(idx, mags) {
-    const freq = BINS[idx];
-    // ancho de banda: contar bins vecinos también elevados
-    let neighborsUp = 0;
-    for (let d = -3; d <= 3; d++) {
-      const j = idx + d;
-      if (d === 0 || j < 0 || j >= BINS.length) continue;
-      if (mags[j] / Math.max(baseline[j], 1e-6) >= sensitivity * 0.55) neighborsUp++;
-    }
-    const wide = neighborsUp >= 4;
-
-    let label, tag, description;
-    if (wide) {
-      label = 'Evento de banda ancha';
-      tag = 'BANDA ANCHA';
-      description = 'La energía se elevó de forma simultánea en varias frecuencias del rango, sin un pico dominante claro. ' +
-        'Suele corresponder a un evento no periódico y breve del entorno (golpe, ráfaga, movimiento brusco) más que a una vibración rítmica sostenida.';
-    } else if (freq < 4) {
-      label = 'Pulso transitorio de muy baja frecuencia';
-      tag = 'PULSO';
-      description = 'Un único pico agudo y aislado por debajo de 4 Hz. Es consistente con un evento puntual y corto ' +
-        '(un impacto, un paso, una puerta) más que con un patrón que se repite en el tiempo.';
-    } else if (freq < 8) {
-      label = 'Patrón rítmico de baja frecuencia (4–8 Hz)';
-      tag = 'RÍTMICO';
-      description = 'Una oscilación estrecha y sostenida en esta banda, compatible con una fuente que pulsa de forma regular ' +
-        '—por ejemplo un motor a baja carga, un ventilador o una vibración mecánica de ciclo lento.';
-    } else if (freq < 13) {
-      label = 'Patrón periódico medio (8–13 Hz)';
-      tag = 'PERIÓDICO';
-      description = 'Modulación regular y estrecha en esta banda intermedia, típica de vibraciones mecánicas de régimen ' +
-        'medio o de un golpeteo/tapping con cadencia constante.';
-    } else {
-      label = 'Vibración periódica rápida (13–20 Hz)';
-      tag = 'VIBRACIÓN';
-      description = 'Oscilación estrecha cerca del límite superior del rango analizado, coherente con zumbido de motor, ' +
-        'maquinaria en marcha u otra fuente mecánica de ciclo rápido.';
-    }
-
-    // recurrencia con historial
-    const recurrent = history.some(h => Math.abs(h.freq - freq) <= 1);
-    if (recurrent) {
-      description += ' Además, ya se había registrado un pico similar en esta misma sesión: podría tratarse de una fuente recurrente en el entorno.';
-    }
-
-    return { label, tag, description, wide, recurrent };
-  }
-
-  function triggerAnomaly(idx, mags) {
-    const freq = BINS[idx];
-    const level = mags[idx] / Math.max(baseline[idx], 1e-6);
-    const cls = classifyPattern(idx, mags.slice());
-
-    // severidad: qué tan por encima del umbral que le correspondía a esta banda quedó el nivel
-    const effThresh = freq > HIGH_BAND_CUTOFF ? sensitivity * HIGH_BAND_MULT : sensitivity;
-    const overshoot = level / effThresh;
-    const isCritical = overshoot >= CRITICAL_MULTIPLIER || (cls.wide && overshoot >= CRITICAL_MULTIPLIER * 0.75);
-    const severity = isCritical ? 'critica' : 'menor';
-
-    const entry = {
-      time: new Date(),
-      freq, level, severity, ...cls
-    };
-
-    // si hubo voz/habla detectada justo antes, lo aclaramos: la modulación
-    // rítmica del habla puede generar exactamente este tipo de patrón 0-20Hz
-    const speechRecent = (Date.now() - lastSpeechAt) <= SPEECH_COINCIDENCE_MS;
-    entry.speechCoincidence = speechRecent;
-    if (speechRecent) {
-      entry.description += ' Esto coincidió con voz/habla detectada por el micrófono en ese mismo instante: es probable que la anomalía corresponda a la modulación rítmica del habla y no a una fuente externa del entorno.';
-    }
-
-    history.unshift(entry);
-    // Canal bidireccional: una anomalía/detección del barrido se registra como
-    // mensaje del canal infrasónico, separado visualmente de la voz del usuario.
-    addConversationMessage(
-      'infra',
-      'Señal detectada · ' + cls.tag + (speechRecent ? ' (coincidente con voz)' : ''),
-      { freq, level, direction:'rx', protocol:false }
-    );
-    // Nota: la recepción del canal bidireccional ya no depende de este pico del barrido
-    // 0-20Hz — el receptor Morse (morseFeedSample) corre en paralelo, con resolución fina
-    // de tiempo, alimentado directamente desde cada bloque de audio.
-    // Si existe una palabra reciente y la evidencia infrasónica domina, la misma palabra
-    // queda marcada en el Historial de palabras como procedente del canal infra.
-    const q = quantumFuse({freq, level, speechRecent, temporalStability:Math.min(1, (hitStreak[idx]+1)/SUSTAIN_TICKS_REQUIRED), languageScore:wordHistory[0]?.conf || .5});
-    if (wordHistory.length && q.source === 'infra' && Date.now() - wordHistory[0].time.getTime() < 4000) {
-      wordHistory[0].origin = 'infra';
-      wordHistory[0].quantumConfidence = q.confidence;
-      wordHistory[0].quantumEntropy = q.entropy;
-      wordHistory[0].quantumCoherence = q.coherence;
-      renderWordHistory();
-    }
-    renderHistory();
-
-    // esta banda entra en enfriamiento para no volver a disparar la misma anomalía
-    // en el tick siguiente; el monitoreo del resto del espectro continúa sin pausa
-    cooldown[idx] = performance.now() + COOLDOWN_MS;
-    hitStreak[idx] = 0;
-
-    setStatus('anomaly', 'Anomalía detectada · ' + freq.toFixed(1) + ' Hz — monitoreo continúa');
-    if (flashTimeout) clearTimeout(flashTimeout);
-    flashTimeout = setTimeout(() => {
-      if (sweeping) setStatus('sweeping', 'Barriendo 0–20 Hz');
-    }, FLASH_MS);
-  }
-
-  function renderHistory() {
-    historyCount.textContent = history.length + (history.length === 1 ? ' registro' : ' registros');
-    if (history.length === 0) {
-      historyList.innerHTML = '<div class="history-empty">Sin detecciones todavía. El historial se llena cuando el barrido encuentra y clasifica un patrón, y se reinicia con "Refresh".</div>';
-      return;
-    }
-    historyList.innerHTML = history.map(h => {
-      const t = h.time.toLocaleTimeString('es-ES', { hour12: false });
-      const critical = h.severity === 'critica';
-      const tagText = critical ? 'ANOMALÍA CRÍTICA · ' + h.tag : h.tag;
-      const speechNote = h.speechCoincidence
-        ? '<span class="voice-chip" style="margin-left:6px;">coincide con voz</span>' : '';
-      return `<div class="entry${critical ? ' critical' : ''}">
-        <div class="row1"><span>${t}</span><span class="freq">${h.freq.toFixed(1)} Hz · ${h.level.toFixed(2)}×</span></div>
-        <div class="tag">${tagText}</div>${speechNote}
-        <div class="desc"><strong>${h.label}.</strong> ${h.description}</div>
-      </div>`;
-    }).join('');
-  }
-
-  // ---------- Dibujo del scope ----------
-  function drawScope(mags, highlightIdx) {
-    const W = canvas.width, H = canvas.height;
-    ctx.clearRect(0, 0, W, H);
-
-    const padL = 40, padR = 14, padT = 10, padB = 24;
-    const plotW = W - padL - padR, plotH = H - padT - padB;
-
-    // rejilla
-    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--grid-line');
-    ctx.fillStyle = '#7c8a86';
-    ctx.font = '11px monospace';
-    ctx.lineWidth = 1;
-    for (let f = 0; f <= 20; f += 2) {
-      const x = padL + (f / 20) * plotW;
-      ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); ctx.stroke();
-      ctx.fillText(f + '', x - 6, H - 8);
-    }
-    for (let g = 0; g <= 4; g++) {
-      const y = padT + plotH - (g / 4) * plotH;
-      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke();
-    }
-    ctx.fillText('Hz', padL + plotW - 10, H - 8);
-
-    const maxMag = Math.max(0.0001, ...mags, ...baseline.map(b => b * sensitivity));
-    const barW = plotW / mags.length;
-
-    // línea base adaptativa
-    ctx.strokeStyle = 'rgba(78,168,160,0.6)';
-    ctx.beginPath();
-    baseline.forEach((b, i) => {
-      const x = padL + i * barW + barW / 2;
-      const y = padT + plotH - (Math.min(b * sensitivity, maxMag) / maxMag) * plotH;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-
-    // barras de magnitud
-    mags.forEach((m, i) => {
-      const x = padL + i * barW;
-      const h = (Math.min(m, maxMag) / maxMag) * plotH;
-      const isHot = i === highlightIdx && hitStreak[i] > 0;
-      ctx.fillStyle = isHot ? '#e2483d' : '#e8a33d';
-      ctx.globalAlpha = isHot ? 0.9 : 0.55;
-      ctx.fillRect(x + 1, padT + plotH - h, Math.max(1, barW - 2), h);
-    });
-    ctx.globalAlpha = 1;
-
-    // línea de barrido cosmética
-    sweepPhase = (sweepPhase + 0.012) % 1;
-    const sx = padL + sweepPhase * plotW;
-    ctx.strokeStyle = 'rgba(233,228,216,0.25)';
-    ctx.beginPath(); ctx.moveTo(sx, padT); ctx.lineTo(sx, padT + plotH); ctx.stroke();
-  }
-
-  let idleAnim;
-  function idleDraw() {
-    if (!calibrating && !sweeping) {
-      drawScope(lastMagnitudes.map(() => 0), -1);
-    }
-    idleAnim = requestAnimationFrame(idleDraw);
-  }
-  idleDraw();
-
-  // ---------- Modulación de palabras (reconocimiento de voz, módulo independiente) ----------
-  const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let recognition = null, recognitionActive = false, recognitionShouldRun = false;
-  let lastSpeechAt = 0;
-
-  // Capa de interpretación: la franja Hz dominante del envelope YA es, en esencia,
-  // la tasa de pulsación (cadencia) del sonido. Esto solo la traduce a un
-  // fenómeno acústico/fisiológico reconocible, sin volver a procesar audio.
-  function classifySyllabicRate(freq) {
-    if (freq === null || freq === undefined) return null;
-    if (freq < 2) return {
-      tag: 'INFRASÓNICO',
-      label: 'Pulsación infrasónica / respiración',
-      desc: 'Rara vez corresponde a voz articulada: suele ser aire o presión directa sobre la cápsula del micrófono, movimientos del diafragma, o una fuente mecánica externa (pasos, golpes, puertas).'
-    };
-    if (freq < 3) return {
-      tag: 'PULSO LENTO',
-      label: 'Frontera pulso mecánico / respiración',
-      desc: 'Zona límite entre respiración y habla muy lenta; ambigua por sí sola.'
-    };
-    if (freq < 8) return {
-      tag: 'CADENCIA ESTÁNDAR',
-      label: 'Cadencia prosódica estándar',
-      desc: 'Coincide con el ritmo típico del habla humana (aprox. 3 a 5 sílabas por segundo): el compás natural de una oración hablada o leída.'
-    };
-    if (freq < 12) return {
-      tag: 'CADENCIA ACELERADA',
-      label: 'Cadencia acelerada',
-      desc: 'Ritmo de sílabas más rápido que lo habitual: habla apurada, dicción intensa o nerviosismo.'
-    };
-    if (freq < 16) return {
-      tag: 'ARTICULACIÓN RÁPIDA',
-      label: 'Modulación rápida / articulación silábica',
-      desc: 'El micrófono capta la articulación física —oclusiones de labios y lengua, transiciones consonánticas rápidas— aunque el motor de voz no siempre logre decodificar fonemas claros: sílabas muy cortas, risa o balbuceo.'
-    };
-    return {
-      tag: 'FRICATIVO / SISEO',
-      label: 'Fricativas y siseo agudo',
-      desc: 'Cerca del límite superior del rango analizado: consonantes fricativas (s, f, sh) o ruido de aire agudo, más que vocales sostenidas.'
-    };
-  }
-  let restartTimer = null;
-  let recentRestarts = 0, recentRestartsWindowStart = 0;
-  const SPEECH_COINCIDENCE_MS = 2500;
-  const RESTART_DELAY_MS = 400;
-  const MAX_RESTARTS_PER_WINDOW = 6;
-  const RESTART_WINDOW_MS = 10000;
-  const PERMISSION_ERRORS = ['not-allowed', 'service-not-allowed'];
-
-  function speechErrorMessage(code) {
-    const messages = {
-      'audio-capture': 'El navegador no puede acceder al micrófono de voz. Cerrá otras aplicaciones o pestañas que estén usándolo y reintentá.',
-      'network': 'El motor de reconocimiento necesita conexión a Internet. Verificá la conexión y reintentá.',
-      'language-not-supported': 'La variante de español no está disponible en este navegador. Se intentará usar español internacional.',
-      'service-not-allowed': 'El servicio de reconocimiento de voz está bloqueado por el navegador.',
-      'not-allowed': 'El permiso para el reconocimiento de voz fue bloqueado.'
-    };
-    return messages[code] || ('El reconocimiento de voz informó el error: ' + code + '.');
-  }
-
-  function escapeHtml(value) {
-    return String(value).replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[char]);
-  }
-
-  // ---------- Protocolo bidireccional experimental ----------
-  // La transmisión no intenta producir "infrasonido puro" (los parlantes comunes no lo hacen bien).
-  // En su lugar modula una portadora audible con una envolvente de 3–20 Hz. El receptor analiza esa envolvente.
-  // ---------- Protocolo Morse ITU estándar ----------
-  // TX real por encendido/apagado de un tono portador (on/off keying), como un sidetone de radio.
-  // RX mide la duración de los pulsos (tono) y silencios sobre la envolvente de audio en vivo
-  // y los clasifica en punto/raya/espacios según la temporización estándar de Morse (PARIS).
-  const MORSE_MAP = {
-    A:'.-', B:'-...', C:'-.-.', D:'-..', E:'.', F:'..-.', G:'--.', H:'....', I:'..', J:'.---',
-    K:'-.-', L:'.-..', M:'--', N:'-.', O:'---', P:'.--.', Q:'--.-', R:'.-.', S:'...', T:'-',
-    U:'..-', V:'...-', W:'.--', X:'-..-', Y:'-.--', Z:'--..',
-    '0':'-----','1':'.----','2':'..---','3':'...--','4':'....-','5':'.....','6':'-....','7':'--...','8':'---..','9':'----.',
-    '.':'.-.-.-', ',':'--..--', '?':'..--..', "'":'.----.', '!':'-.-.--', '/':'-..-.', '(':'-.--.', ')':'-.--.-',
-    '&':'.-...', ':':'---...', ';':'-.-.-.', '=':'-...-', '+':'.-.-.', '-':'-....-', '_':'..--.-', '"':'.-..-.', '@':'.--.-.'
-  };
-  const MORSE_REVERSE = Object.fromEntries(Object.entries(MORSE_MAP).map(([k,v]) => [v,k]));
-
-  function textToMorse(text) {
-    return String(text || '').toUpperCase().trim().split(/\s+/).filter(Boolean).map(word =>
-      word.split('').map(ch => MORSE_MAP[ch] || '').filter(Boolean).join(' ')
-    ).join(' / ');
-  }
-
-  function morseToText(morse) {
-    return String(morse || '').trim().split(/\s*\/\s*|\s{2,}/).map(word =>
-      word.trim().split(/\s+/).filter(Boolean).map(code => MORSE_REVERSE[code] || '?').join('')
-    ).filter(Boolean).join(' ');
-  }
-
-  function isMorseLike(str) {
-    const s = String(str || '').trim();
-    return s.length > 0 && /^[.\-\/\s]+$/.test(s) && /[.\-]/.test(s);
-  }
-
-  const duplexState = {
-    tx: '—', rx: '—', confidence: 0, frame: 0,
-    txAudio: null, txBusy: false,
-    lastRxAt: 0
-  };
-  const duplexTx = $('duplexTx'), duplexRx = $('duplexRx'), duplexConfidence = $('duplexConfidence');
-  const duplexFrame = $('duplexFrame'), duplexProtocolStatus = $('duplexProtocolStatus');
-  const duplexMessageInput = $('duplexMessageInput'), btnDuplexSend = $('btnDuplexSend');
-  const wpmRange = $('wpmRange'), wpmVal = $('wpmVal');
-
-  let morseWpm = 15; // palabras por minuto, estándar de referencia PARIS
-  if (wpmRange) wpmRange.addEventListener('input', () => {
-    morseWpm = parseInt(wpmRange.value, 10);
-    if (wpmVal) wpmVal.textContent = morseWpm + ' PPM';
-  });
-
-  function duplexSetStatus(text) {
-    if (duplexProtocolStatus) duplexProtocolStatus.textContent = text;
-  }
-
-  // Tono portador único (sidetone), encendido/apagado en vez de modulado en frecuencia:
-  // esto es exactamente cómo suena el Morse real por radio o por parlante.
-  const MORSE_TONE_HZ = 700;
-  function duplexPlayTone(durationMs) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return Promise.resolve(false);
-    const ac = new AC();
-    duplexState.txAudio = ac;
-    const osc = ac.createOscillator();
-    const gain = ac.createGain();
-    const t = ac.currentTime;
-    osc.type = 'sine';
-    osc.frequency.value = MORSE_TONE_HZ;
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.2, t + 0.008);
-    gain.gain.setValueAtTime(0.2, t + durationMs / 1000 - 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + durationMs / 1000);
-    osc.connect(gain).connect(ac.destination);
-    osc.start(t);
-    osc.stop(t + durationMs / 1000 + 0.02);
-    return new Promise(resolve => setTimeout(() => {
-      try { ac.close(); } catch (_) {}
-      duplexState.txAudio = null;
-      resolve(true);
-    }, durationMs + 20));
-  }
-
-  async function transmitDuplexMessage(message) {
-    const clean = String(message || '').toUpperCase().replace(/[^ A-Z0-9.,!?'/()&:;=+\-_"@]/g, '').slice(0,120);
-    if (!clean || duplexState.txBusy) return;
-    const morse = textToMorse(clean);
-    if (!morse) return;
-    duplexState.txBusy = true;
-    duplexState.tx = clean;
-    duplexSetStatus('transmitiendo (Morse) …');
-    if (duplexTx) duplexTx.textContent = clean.length > 18 ? clean.slice(0,18) + '…' : clean;
-    addConversationMessage('user', 'TX · ' + clean, { final:true, direction:'tx', protocol:true, band: morse });
-    speakText('Transmitiendo: '+clean,'es-ES','TX');
-    const unit = 1200 / morseWpm; // ms por unidad, fórmula estándar PARIS
-    try {
-      for (const symbol of morse) {
-        if (symbol === '.') { await duplexPlayTone(unit); await new Promise(r => setTimeout(r, unit)); }
-        else if (symbol === '-') { await duplexPlayTone(unit * 3); await new Promise(r => setTimeout(r, unit)); }
-        else if (symbol === ' ') { await new Promise(r => setTimeout(r, unit * 2)); } // total 3 unidades entre letras
-        else if (symbol === '/') { await new Promise(r => setTimeout(r, unit * 4)); } // total 7 unidades entre palabras
-      }
-      duplexSetStatus('transmisión completa (Morse)');
-    } finally {
-      duplexState.txBusy = false;
-    }
-  }
-
-  function updateDuplexRX(text, confidence) {
-    duplexState.rx = text || '—';
-    duplexState.confidence = Math.max(0, Math.min(1, confidence || 0));
-    duplexState.lastRxAt = Date.now();
-    if (duplexRx) duplexRx.textContent = text || '—';
-    if (duplexConfidence) duplexConfidence.textContent = Math.round(duplexState.confidence * 100) + '%';
-  }
-
-  // ---------- Receptor Morse en tiempo real (on/off keying sobre la envolvente del mic) ----------
-  // A diferencia del barrido 0-20Hz (que analiza cada 300ms con Goertzel), acá necesitamos
-  // resolución fina de tiempo para medir punto vs. raya, así que se alimenta directamente
-  // desde cada bloque de audio (onaudioprocess), no desde analysisTick.
-  const morseRx = {
-    floor: 0.002, unitMs: 1200/18, state:'off', segStart: performance.now(),
-    symbol:'', word:'', wordMorse:'', text:'', lastEdgeAt: performance.now(), pulseHistory:[],
-    onStreak:0 // bloques de audio consecutivos por encima del umbral, para no disparar con un solo pico de ruido
-  };
-  const MORSE_ON_MULT = 3.4;       // cuánto por encima del piso de ruido cuenta como "tono presente" (con margen extra vs. ruido ambiente)
-  const MORSE_TONE_RATIO_MIN = 0.32; // proporción mínima de energía en 700 Hz vs. energía total del bloque
-  const MORSE_ON_STREAK_REQUIRED = 2; // bloques consecutivos por encima del umbral antes de aceptar que "empezó" un tono real
-  const MORSE_MIN_PULSE_MS = 25;      // un pulso más corto que esto es un chasquido/ruido, no un punto real
-  // Umbrales de silencio en unidades Morse (estándar PARIS: 1u=punto, 3u=raya, 3u=entre letras, 7u=entre palabras).
-  // Se dejan con margen de tolerancia sobre el estándar para no cortar una letra/palabra por jitter de timing,
-  // pero SIEMPRE se espera el silencio correspondiente antes de cerrar — nunca se decodifica a mitad de señal.
-  const MORSE_LETTER_GAP_UNITS = 2.2;  // > que esto: la letra terminó (menos de 3u=raya, más que el hueco intra-letra de 1u)
-  const MORSE_WORD_GAP_UNITS = 6.0;    // > que esto: la palabra terminó (cerca del estándar de 7u)
-  function morseSilenceFinalizeMs() {
-    // Red de seguridad si se corta la transmisión: escala con la velocidad (WPM) en vez de
-    // un valor fijo, para no cerrar de más a baja velocidad ni tardar de más a alta velocidad.
-    return Math.max(1100, morseRx.unitMs * 8);
-  }
-
-  function morseResetRx() {
-    morseRx.state = 'off'; morseRx.symbol = ''; morseRx.word = ''; morseRx.text = '';
-    morseRx.segStart = performance.now(); morseRx.lastEdgeAt = performance.now(); morseRx.pulseHistory = [];
-    morseRx.onStreak = 0;
-    updateDuplexRX('—', 0);
-    if (duplexFrame) duplexFrame.textContent = '0';
-  }
-
-  function morseFinalizeLetter(){
-    // Cierra UNA letra: solo se llama cuando ya hubo un silencio >= al hueco entre letras,
-    // es decir, cuando el emisor terminó de mandar esa letra (nunca a mitad de un punto/raya).
-    if(!morseRx.symbol)return '';const code=morseRx.symbol,letter=MORSE_REVERSE[code]||'?';morseRx.word+=letter;morseRx.wordMorse=(morseRx.wordMorse+' '+code).trim();morseRx.symbol='';
-    duplexSetStatus('RX · letra recibida: '+code+' → '+letter);
-    return letter;
-  }
-  async function morseFinalizeWord(pushToConversation=true){
-    morseFinalizeLetter();const word=morseRx.word.trim();const wordMorse=morseRx.wordMorse.trim();if(!word)return;
-    morseRx.text=(morseRx.text+' '+word).trim().slice(-200);
-    if(duplexFrame)duplexFrame.textContent=String((parseInt(duplexFrame.textContent,10)||0)+1);
-    if(pushToConversation){
-      const detected=detectLanguageHeuristic(word),translated=await translateText(word,detected==='unknown'?'auto':detected,'es');
-      const hasTranslation=translated&&translated.toLowerCase()!==word.toLowerCase();
-      // Mensaje (texto decodificado) y traducción se muestran juntos, siempre acompañados
-      // del patrón Morse original (puntos/rayas) que dio origen a la decodificación.
-      updateDuplexRX(hasTranslation?word+' → '+translated:word,.88);
-      addConversationMessage('infra',hasTranslation?word+' → '+translated:word,{
-        direction:'rx',hypothesis:false,protocol:true,confidence:.88,
-        band:'Mensaje: '+word+(hasTranslation?' · Traducción: '+translated:'')+' · Morse: '+wordMorse,
-        morse:wordMorse
-      });
-      saveReceivedWord(word,translated,{band:'Morse RX',confidence:.88,morse:wordMorse});await speakOriginalAndTranslation(word,translated,detected,'es');
-    }morseRx.word='';morseRx.wordMorse='';
-  }
-  function morseFeedAudio(data,sr,now){
-    if(duplexState.txBusy||ttsSpeaking)return;let sum=0;for(let i=0;i<data.length;i++)sum+=data[i]*data[i];
-    const rms=Math.sqrt(sum/Math.max(1,data.length)),tone=goertzelMagnitude(data,sr,MORSE_TONE_HZ),toneRatio=tone/Math.max(rms,.0001);
-    const rawIsOn=rms>morseRx.floor*MORSE_ON_MULT+.0012&&toneRatio>MORSE_TONE_RATIO_MIN;
-    if(!rawIsOn){morseRx.floor=morseRx.floor*.997+rms*.003;morseRx.onStreak=0;}else{morseRx.onStreak++;}
-    // Un solo bloque por encima del umbral puede ser un chasquido de ruido, no un tono real:
-    // exigimos varios bloques seguidos antes de aceptar que "empezó" un pulso.
-    const isOn = morseRx.state==='on' ? rawIsOn : (rawIsOn && morseRx.onStreak>=MORSE_ON_STREAK_REQUIRED);
-    if(isOn&&morseRx.state==='off'){
-      // Un nuevo tono empieza: recién ACÁ sabemos que el silencio anterior terminó, y recién
-      // ahí decidimos si ese silencio marcaba fin de letra o fin de palabra. Nunca se decide
-      // en base a un solo punto/raya suelto.
-      const gap=now-morseRx.lastEdgeAt;
-      if(gap>morseRx.unitMs*MORSE_WORD_GAP_UNITS)morseFinalizeWord(true);
-      else if(gap>morseRx.unitMs*MORSE_LETTER_GAP_UNITS)morseFinalizeLetter();
-      morseRx.state='on';morseRx.segStart=now;morseRx.lastEdgeAt=now;duplexSetStatus('RX · tono Morse detectado');
-    }else if(!rawIsOn&&morseRx.state==='on'){
-      const dur=now-morseRx.segStart;
-      if(dur<MORSE_MIN_PULSE_MS){
-        // Demasiado corto para ser un punto real (incluso a la velocidad máxima permitida):
-        // es un chasquido de ruido. Lo descartamos sin tocar el símbolo ni el reloj de silencio,
-        // como si el tono nunca se hubiera cortado.
-        morseRx.state='on';return;
-      }
-      morseRx.pulseHistory.push(dur);if(morseRx.pulseHistory.length>12)morseRx.pulseHistory.shift();
-      const shorts=morseRx.pulseHistory.filter(p=>p>20&&p<morseRx.unitMs*2);if(shorts.length>=3){const avg=shorts.reduce((a,b)=>a+b,0)/shorts.length;morseRx.unitMs=morseRx.unitMs*.8+avg*.2;}
-      morseRx.symbol+=dur>morseRx.unitMs*1.9?'-':'.';
-      // IMPORTANTE: acá NO se traduce el símbolo todavía. Un solo punto puede terminar siendo
-      // "E", pero también el comienzo de "I", "S", "H" o "5" — recién se sabe cuál es cuando
-      // llega el silencio de fin de letra (arriba). Por eso solo mostramos el patrón crudo
-      // acumulado, no una letra adivinada a partir de un símbolo incompleto.
-      const preview=(morseRx.text+' '+morseRx.word+morseRx.symbol).trim();
-      updateDuplexRX(preview,.5);
-      duplexSetStatus('RX · recibiendo símbolo: '+morseRx.symbol+' (esperando señal completa…)');
-      morseRx.state='off';morseRx.lastEdgeAt=now;morseRx.onStreak=0;
-    }else if(!rawIsOn&&morseRx.state==='off'&&now-morseRx.lastEdgeAt>morseSilenceFinalizeMs()&&(morseRx.symbol||morseRx.word)){
-      morseFinalizeWord(true);updateDuplexRX(morseRx.text||'—',.9);duplexSetStatus('RX · mensaje Morse completo');
-    }
-  }
-  function morseFeedSample(rms,now){/* compatibilidad: el receptor usa morseFeedAudio() */}
-
-
-
-  // ---------- Traducción inversa: patrón de texto recibido → palabras ----------
-  // El protocolo TX codifica cada carácter como una frecuencia dentro de DUPLEX_ALPHABET.
-  // Cuando el "patrón" llega ya como texto (letras), no como audio, aplicamos la lógica
-  // inversa genérica: probamos todos los desplazamientos posibles sobre ese mismo alfabeto
-  // y rankeamos los 49 candidatos por dos señales — palabras de diccionario reconocidas y
-  // "sonoridad" de español (bigramas frecuentes) — en vez de depender solo de coincidencias
-  // exactas de diccionario, que fallan fácil con mensajes cortos de 1-2 palabras.
-  // Como no sabemos con certeza qué cifrado usa el emisor real, además del mejor candidato
-  // automático se puede navegar manualmente los 49 desplazamientos posibles.
-  const PATTERN_COMMON_WORDS = ['DE','LA','QUE','EL','EN','Y','A','LOS','SE','DEL','LAS','UN','POR','CON','NO','UNA','SU','PARA','ES','AL','LO','COMO','MAS','PERO','SUS','LE','YA','O','ESTE','SI','ESTA','SON','ENTRE','CUANDO','MUY','SIN','SOBRE','TAMBIEN','ME','HASTA','HAY','DONDE','QUIEN','DESDE','TODO','NOS','TODOS','UNO','LES','NI','CONTRA','OTROS','ESE','MI','MISMO','YO','HOLA','GRACIAS','AYUDA','ESTOY','AQUI','VEN','DETENTE','ADIOS','BIEN','MAL','AMOR','TIEMPO','VIDA','MUNDO','CASA','AGUA','FUEGO','LUZ','SOMBRA','VOZ','SEÑAL','MENSAJE','ESCUCHO','MADRE','PADRE','NOCHE','DIA','SOL','LUNA','MAR','CIELO','CAMINO','LIBRO','NOMBRE','GENTE','COSA','MANO','OJO','CORAZON','PALABRA','TODOS','PUEDO','QUIERO','ESTAMOS','ESTAN','VAMOS','VEN','VER','SER','ESTAR','TENER','HACER','DECIR','SABER','PODER','QUERER','LLEGAR','PASAR','DEBER','PONER','PARECER','QUEDAR','CREER','HABLAR','LLEVAR','DEJAR','SEGUIR','ENCONTRAR','LLAMAR','VENIR','PENSAR','SALIR','VOLVER','TOMAR','CONOCER','VIVIR','SENTIR','TRATAR','MIRAR','CONTAR','EMPEZAR','ESPERAR','BUSCAR','EXISTIR','ENTRAR','TRABAJAR','ESCRIBIR','PERDER','PRODUCIR','OCURRIR','ENTENDER','PEDIR','RECIBIR','RECORDAR','TERMINAR','PERMITIR','APARECER','CONSEGUIR','COMENZAR','SERVIR','SACAR','NECESITAR','MANTENER','RESULTAR','LEER','CAER','CAMBIAR','PRESENTAR','CREAR','ABRIR','CONSIDERAR','OFRECER','THE','HELLO','YOU','ARE','AND','FOR','THIS','THAT','HELP','HERE'];
-
-  // Bigramas de dos letras frecuentes en castellano: sirven de heurística de "sonoridad"
-  // cuando no hay coincidencias exactas de diccionario (mensajes muy cortos, nombres, etc.)
-  const SPANISH_BIGRAMS = new Set(['DE','EN','ES','LA','EL','OS','AR','ER','RA','TA','AS','AD','ON','TE','AN','AL','OR','CO','ST','DO','SE','RE','ND','QU','UE','CI','TI','IO','ME','MA','LO','MI','SI','NO','TO','CA','PA','PO','CU','IN','IT','UN','US','LE','CE','RI','RO','LI','DI','FI','VI','GA','GE','GI'].map(b=>b));
-
-  function caesarShiftAlphabet(str, shift, alphabet) {
-    return str.toUpperCase().split('').map(ch => {
-      const i = alphabet.indexOf(ch);
-      if (i < 0) return ch; // deja intactos los caracteres fuera del alfabeto (espacios ya están incluidos)
-      const j = ((i - shift) % alphabet.length + alphabet.length) % alphabet.length;
-      return alphabet[j];
-    }).join('');
-  }
-
-  function scorePatternCandidate(text) {
-    const words = text.split(/\s+/).filter(Boolean);
-    let dictHits = 0, dictScore = 0;
-    words.forEach(w => { if (PATTERN_COMMON_WORDS.includes(w)) { dictScore += w.length + 2; dictHits++; } });
-    // Puntaje de bigramas: cuenta pares de letras consecutivas típicos del castellano,
-    // para que el sistema elija algo "pronunciable" incluso sin coincidencia exacta.
-    let bigramScore = 0, bigramTotal = 0;
-    const letters = text.replace(/[^A-ZÁÉÍÓÚÜÑ]/g, '');
-    for (let i = 0; i < letters.length - 1; i++) {
-      bigramTotal++;
-      if (SPANISH_BIGRAMS.has(letters.slice(i, i + 2))) bigramScore++;
-    }
-    const bigramRatio = bigramTotal ? bigramScore / bigramTotal : 0;
-    // Diccionario pesa mucho más: es evidencia fuerte. Bigramas es solo desempate suave.
-    return { total: dictScore * 10 + bigramRatio * 3, dictHits, bigramRatio };
-  }
-
-  function rankPatternCandidates(pattern) {
-    const clean = String(pattern || '').trim();
-    if (!clean) return [];
+    // Caso 2: Texto con desplazamiento / Fuerza bruta Caesar (27 letras)
+    const alphabetLength = 27;
     const candidates = [];
-    for (let shift = 0; shift < DUPLEX_ALPHABET.length; shift++) {
-      const text = caesarShiftAlphabet(clean, shift, DUPLEX_ALPHABET);
-      const s = scorePatternCandidate(text);
-      candidates.push({ shift, text, ...s });
+    for (let s = 0; s < alphabetLength; s++) {
+      const shifted = shiftText(raw, s);
+      const score = scoreTextValidity(shifted);
+      candidates.push({ text: shifted, shift: s, score });
     }
-    candidates.sort((a, b) => b.total - a.total);
-    return candidates;
-  }
 
-  let patternCandidates = [], patternCandidateIdx = 0, patternOriginalRaw = '';
+    candidates.sort((a, b) => b.score - a.score || a.shift - b.shift);
+    patternCandidates = candidates;
+    patternCandidateIndex = 0;
 
-  function renderPatternCandidate() {
-    if (!patternCandidates.length) return;
-    const c = patternCandidates[patternCandidateIdx];
-    const words = c.text.split(/\s+/).filter(Boolean);
-    const confidence = words.length ? Math.min(0.97, 0.1 + (c.dictHits / words.length) * 0.75 + c.bigramRatio * 0.15) : 0.1;
-    if (patternOriginal) patternOriginal.textContent = patternOriginalRaw;
-    if (patternDecoded) patternDecoded.textContent = c.text;
-    if (patternDecodeStatus) {
-      const label = c.dictHits > 0
-        ? c.dictHits + '/' + words.length + ' palabras reconocidas'
-        : 'sin coincidencia de diccionario — mejor aproximación fonética';
-      patternDecodeStatus.textContent = label + ' · ' + Math.round(confidence * 100) + '% confianza · candidato ' + (patternCandidateIdx + 1) + '/' + patternCandidates.length + ' (desplazamiento ' + c.shift + ')';
-    }
-    return { text: c.text, confidence, dictHits: c.dictHits };
-  }
-
-  async function speakPatternCandidate(){
-    if(!patternCandidates.length)return;
-    const c=patternCandidates[patternCandidateIdx];
-    const detected=detectLanguageHeuristic(c.text);
-    const translated=await translateText(c.text,detected==='unknown'?'auto':detected,'es');
-    await speakText('Morse original: '+patternOriginalRaw,'es-ES','Morse RX');
-    await speakOriginalAndTranslation(c.text,translated,detected,'es');
-  }
-
-  function runPatternDecode() {
-    const raw = patternInput ? patternInput.value : '';
-    patternOriginalRaw = String(raw || '').trim();
-    if (!patternOriginalRaw) {
-      if (patternDecodeStatus) patternDecodeStatus.textContent = 'sin patrón';
-      patternCandidates = [];
-      return;
-    }
-    // Si el patrón está compuesto solo por puntos, rayas, barras y espacios, es Morse:
-    // se decodifica de forma exacta y determinística, sin necesidad de adivinar nada.
-    if (isMorseLike(patternOriginalRaw)) {
-      const decoded = morseToText(patternOriginalRaw);
-      if (patternOriginal) patternOriginal.textContent = patternOriginalRaw;
-      if (patternDecoded) patternDecoded.textContent = decoded || '(no se reconocieron letras válidas)';
-      if (patternDecodeStatus) patternDecodeStatus.textContent = 'Código Morse detectado · decodificación exacta';
-      patternCandidates = [];
-      addConversationMessage('infra', decoded || patternOriginalRaw, {
-        direction: 'rx', hypothesis: false, protocol: true,
-        confidence: 0.95, band: 'Morse · patrón original: ' + patternOriginalRaw
-      });
-      return;
-    }
-    patternCandidates = rankPatternCandidates(patternOriginalRaw);
-    patternCandidateIdx = 0;
-    const r = renderPatternCandidate();
-    if (!r) return;
-    // Se agrega a la conversación como recepción (RX), mostrando siempre el patrón
-    // original en los metadatos junto con la mejor traducción encontrada.
-    addConversationMessage('infra', r.text, {
-      direction: 'rx', hypothesis: true, protocol: true,
-      confidence: r.confidence, band: 'patrón original (no es Morse): ' + patternOriginalRaw
-    });
-  }
-
-  function cyclePatternCandidate(delta) {
-    if (!patternCandidates.length) return;
-    patternCandidateIdx = (patternCandidateIdx + delta + patternCandidates.length) % patternCandidates.length;
-    renderPatternCandidate();
-    speakPatternCandidate().catch(()=>{});
-  }
-
-  if (btnDecodePattern) btnDecodePattern.addEventListener('click', runPatternDecode);
-  if (patternInput) patternInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); runPatternDecode(); }
-  });
-  if (btnPatternPrev) btnPatternPrev.addEventListener('click', () => cyclePatternCandidate(-1));
-  if (btnPatternNext) btnPatternNext.addEventListener('click', () => cyclePatternCandidate(1));
-
-  // ---------- Grabación de sesión (audio) y export completo ----------
-  let sessionRecorder = null, sessionRecording = false, sessionChunks = [];
-  function toggleSessionRecording() {
-    if (!sessionRecording) {
-      if (!mediaStream || !mediaStream.getTracks().some(t => t.readyState === 'live')) {
-        alert('Iniciá el barrido primero para tener acceso al micrófono y poder grabar la sesión.');
-        return;
-      }
-      if (!window.MediaRecorder) {
-        alert('Este navegador no soporta grabación de audio (MediaRecorder no disponible).');
-        return;
-      }
-      try {
-        sessionChunks = [];
-        sessionRecorder = new MediaRecorder(mediaStream);
-        sessionRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) sessionChunks.push(e.data); };
-        sessionRecorder.onstop = () => {
-          const blob = new Blob(sessionChunks, { type: sessionRecorder.mimeType || 'audio/webm' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'grabacion-sesion-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.webm';
-          document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(() => URL.revokeObjectURL(url), 1500);
-        };
-        sessionRecorder.start();
-        sessionRecording = true;
-        if (btnRecordSession) { btnRecordSession.textContent = '⏹ Detener grabación'; btnRecordSession.classList.add('danger'); }
-      } catch (err) {
-        alert('No se pudo iniciar la grabación: ' + err.message);
-      }
-    } else {
-      if (sessionRecorder && sessionRecorder.state !== 'inactive') sessionRecorder.stop();
-      sessionRecording = false;
-      if (btnRecordSession) { btnRecordSession.textContent = '⏺ Grabar sesión (audio)'; btnRecordSession.classList.remove('danger'); }
-    }
-  }
-  if (btnRecordSession) btnRecordSession.addEventListener('click', toggleSessionRecording);
-
-  function downloadSessionJson() {
-    const payload = {
-      exportadoEn: new Date().toISOString(),
-      historialAnomalias: history,
-      historialPalabras: wordHistory,
-      eventosDeteccion: wordEvents,
-      conversacionBidireccional: conversationHistory,
-      estadoDuplex: { tx: duplexState.tx, rx: duplexState.rx, confidence: duplexState.confidence, frame: duplexState.frame },
-      estadoCuantico: quantumState
+    const best = candidates[0];
+    return {
+      original: raw,
+      decoded: best.text,
+      status: 'Desplazamiento Caesar auto (' + (best.shift === 0 ? 'original' : '+' + best.shift) + ')'
     };
-    const json = JSON.stringify(payload, null, 2);
-    const blob = new Blob([json], { type: 'application/json;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'sesion-completa-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.json';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1500);
-  }
-  if (btnDownloadSessionJson) btnDownloadSessionJson.addEventListener('click', downloadSessionJson);
-
-  function renderConversationHistory() {
-    conversationCount.textContent = conversationHistory.length + (conversationHistory.length === 1 ? ' mensaje' : ' mensajes');
-    if (!conversationHistory.length) {
-      conversationList.innerHTML = '<div class="history-empty">La conversación aparecerá aquí: TX local en celeste y RX del canal en verde.</div>';
-      return;
-    }
-    conversationList.innerHTML = conversationHistory.map(item => {
-      const time = item.time.toLocaleTimeString('es-ES', { hour12:false });
-      const isRx = item.source === 'infra';
-      const isMorse = !!item.protocol && isRx;
-      const sourceLabel = isMorse ? 'RX · Morse' : isRx ? 'RX · Canal' : 'TX · Mi modulación';
-      const meta = isMorse
-        ? (item.hypothesis ? 'hipótesis · decodificación pendiente' : 'señal completa recibida')
-        : isRx
-        ? ((item.freq != null ? item.freq.toFixed(1) + ' Hz' : '') +
-           (item.level != null ? ' · ' + item.level.toFixed(2) + '×' : '') +
-           (item.hypothesis ? ' · hipótesis' : ' · detección'))
-        : ((item.final ? 'voz confirmada' : 'voz en curso') +
-           (item.band ? ' · ' + item.band : '') +
-           (item.protocol ? ' · protocolo AM' : ''));
-      const confidence = item.confidence != null
-        ? '<div class="conv-confidence">Confianza RX: ' + Math.round(item.confidence * 100) + '%</div>' : '';
-      // Para Morse mostramos siempre el patrón crudo (puntos/rayas) recibido, además del
-      // mensaje ya decodificado y su traducción: nunca se oculta la señal original.
-      const morsePattern = isMorse && item.morse
-        ? '<div class="conv-meta" style="font-family:var(--font-mono);letter-spacing:.05em;">Morse: ' + escapeHtml(item.morse) + '</div>' : '';
-      return `<div class="conversation-entry ${isRx ? 'rx' : 'tx'}${item.hypothesis ? ' hypothesis' : ''}">
-        <div class="conv-row"><span>${time}</span><span class="conv-source">${sourceLabel}</span></div>
-        <div class="conv-text">${escapeHtml(item.text)}</div>
-        ${morsePattern}
-        <div class="conv-meta">${escapeHtml(meta)}</div>${confidence}
-      </div>`;
-    }).join('');
   }
 
-  function addConversationMessage(source, text, meta = {}) {
-    text = String(text || '').replace(/\s+/g, ' ').trim();
-    if (!text) return;
-    const now = Date.now();
-    const key = source + '|' + text.toLocaleLowerCase('es-ES') + '|' +
-      (meta.final ? 'final' : 'partial') + '|' + (meta.protocol ? 'protocol' : '');
-    // Un canal (p. ej. Morse) no debe perder su propio debounce solo porque, mientras tanto,
-    // llegó un mensaje de OTRO canal (voz, barrido infrasónico). Por eso cada combinación
-    // fuente+tipo lleva su propio "último mensaje", en vez de una sola clave global.
-    const dedupeChannel = source + '|' + (meta.protocol ? 'protocol' : 'plain');
-    const last = lastConversationByChannel.get(dedupeChannel);
-    // Las detecciones Morse repetidas idénticas suelen ser ruido de fondo re-disparando el
-    // mismo símbolo corto (p. ej. "I"): les damos una ventana de debounce más amplia.
-    const debounceMs = meta.protocol ? (source === 'infra' && meta.morse ? 4000 : 1200) : 2200;
-    if (last && last.key === key && now - last.at < debounceMs) return;
-    lastConversationByChannel.set(dedupeChannel, { key, at: now });
-    conversationHistory.unshift({
-      time:new Date(), source, text,
-      final:!!meta.final, band:meta.band || '',
-      freq:meta.freq ?? null, level:meta.level ?? null,
-      confidence:meta.confidence ?? null,
-      hypothesis:!!meta.hypothesis, direction:meta.direction || (source === 'infra' ? 'rx' : 'tx'),
-      protocol:!!meta.protocol, morse:meta.morse || ''
+  function updatePatternUI() {
+    if (!patternCandidates.length) return;
+    const current = patternCandidates[patternCandidateIndex];
+    if (patternDecoded) patternDecoded.textContent = current.text + (current.shift !== undefined ? ' (despl. +' + current.shift + ')' : '');
+    if (patternDecodeStatus) patternDecodeStatus.textContent = 'Candidato ' + (patternCandidateIndex + 1) + ' de ' + patternCandidates.length;
+  }
+
+  if (btnDecodePattern && patternInput) {
+    btnDecodePattern.addEventListener('click', () => {
+      const res = decodeReceivedPattern(patternInput.value);
+      if (patternOriginal) patternOriginal.textContent = res.original;
+      if (patternDecoded) patternDecoded.textContent = res.decoded;
+      if (patternDecodeStatus) patternDecodeStatus.textContent = res.status;
     });
-    if (conversationHistory.length > 200) conversationHistory.length = 200;
-    renderConversationHistory();
   }
 
-  function downloadConversationHistory() {
-    if (!conversationHistory.length) {
-      alert('No hay mensajes en el historial para descargar.');
-      return;
-    }
-    const rows = [['Hora','Dirección','Origen','Mensaje','Estado','Franja','Frecuencia Hz','Nivel','Confianza RX','Hipótesis','Protocolo']];
-    conversationHistory.slice().reverse().forEach(item => {
-      rows.push([
-        item.time.toLocaleString('es-AR'),
-        item.direction || (item.source === 'infra' ? 'rx' : 'tx'),
-        item.source === 'user' ? 'Mi modulación' : 'Canal RX',
-        item.text,
-        item.source === 'user' ? (item.final ? 'confirmado' : 'en curso') : (item.hypothesis ? 'hipótesis' : 'detección'),
-        item.band || '',
-        item.freq != null ? item.freq.toFixed(1) : '',
-        item.level != null ? item.level.toFixed(2) : '',
-        item.confidence != null ? Math.round(item.confidence * 100) + '%' : '',
-        item.hypothesis ? 'sí' : 'no',
-        item.protocol ? 'AM envolvente' : ''
-      ]);
+  if (btnPatternPrev) {
+    btnPatternPrev.addEventListener('click', () => {
+      if (!patternCandidates.length) return;
+      patternCandidateIndex = (patternCandidateIndex - 1 + patternCandidates.length) % patternCandidates.length;
+      updatePatternUI();
     });
-    const csv = rows.map(row => row.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(',')).join('\r\n');
-    const blob = new Blob(['\ufeff' + csv], {type:'text/csv;charset=utf-8;'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'historial-conversacion-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.csv';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  function clearConversationHistory() {
-    conversationHistory = [];
-    lastConversationByChannel.clear();
-    renderConversationHistory();
+  if (btnPatternNext) {
+    btnPatternNext.addEventListener('click', () => {
+      if (!patternCandidates.length) return;
+      patternCandidateIndex = (patternCandidateIndex + 1) % patternCandidates.length;
+      updatePatternUI();
+    });
   }
 
-  if (btnTranslateHistory) btnTranslateHistory.addEventListener('click', translateAllHistory);
-  if (btnDuplexSend) btnDuplexSend.addEventListener('click', () => transmitDuplexMessage(duplexMessageInput.value));
-  if (duplexMessageInput) duplexMessageInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
+  if (btnDuplexSend && duplexMessageInput) {
+    btnDuplexSend.addEventListener('click', () => {
       transmitDuplexMessage(duplexMessageInput.value);
       duplexMessageInput.value = '';
-    }
-  });
-  if (targetLanguage) targetLanguage.addEventListener('change', () => { if (wordHistory.length) translateAllHistory(); });
-  if (sourceLanguage) sourceLanguage.addEventListener('change', () => { if (wordHistory.length) translateAllHistory(); });
-
-  // ---------- Decodificación cuántico-inspirada (no cuántica real) ----------
-  // Modelamos cada hipótesis de origen como una amplitud compleja. La interferencia
-  // entre evidencia acústica, estabilidad y lenguaje reduce o refuerza candidatos.
-  // Esto NO crea un canal cuántico: solo aplica matemática inspirada en modelos de estado.
-  function complexAdd(a,b){ return {re:a.re+b.re, im:a.im+b.im}; }
-  function complexNorm2(a){ return a.re*a.re + a.im*a.im; }
-  function quantumFuse({freq, level, speechRecent=false, temporalStability=0.5, languageScore=0.5}={}) {
-    const infraEvidence = Math.max(0, Math.min(1, (level||0)/6)) * (freq != null && freq < 8 ? 1 : 0.35);
-    const voiceEvidence = speechRecent ? 0.9 : Math.max(0, Math.min(1, languageScore));
-    const coherence = Math.max(0, Math.min(1, temporalStability));
-    const phase = (freq == null ? 0 : (freq % 8) / 8) * Math.PI * 2;
-    const aUser = { re: Math.sqrt(Math.max(.0001, voiceEvidence*coherence)) * Math.cos(phase), im: Math.sqrt(Math.max(.0001, voiceEvidence*coherence)) * Math.sin(phase) };
-    const aInfra = { re: Math.sqrt(Math.max(.0001, infraEvidence*coherence)) * Math.cos(phase+Math.PI/2), im: Math.sqrt(Math.max(.0001, infraEvidence*coherence)) * Math.sin(phase+Math.PI/2) };
-    const total = Math.max(1e-9, complexNorm2(complexAdd(aUser,aInfra)));
-    const pUser = complexNorm2(aUser)/total, pInfra = complexNorm2(aInfra)/total;
-    const source = pInfra > pUser ? 'infra' : 'user';
-    quantumState = { coherence, entropy: -(pUser*Math.log2(Math.max(pUser,1e-9)) + pInfra*Math.log2(Math.max(pInfra,1e-9))), confidence: Math.max(pUser,pInfra), source };
-    return { source, pUser, pInfra, coherence:quantumState.coherence, entropy:quantumState.entropy };
+    });
+    duplexMessageInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        transmitDuplexMessage(duplexMessageInput.value);
+        duplexMessageInput.value = '';
+      }
+    });
   }
 
-  const fallbackTranslations = {
-    'hello':'hola','hi':'hola','good morning':'buenos días','good night':'buenas noches','yes':'sí','no':'no','help':'ayuda','thank you':'gracias','thanks':'gracias','please':'por favor','how are you':'cómo estás','i am here':'estoy aquí','i hear you':'te escucho','come here':'ven aquí','stop':'detente','one':'uno','two':'dos','three':'tres',
-    'bonjour':'hola','merci':'gracias','oui':'sí','non':'no','salut':'hola','au revoir':'adiós',
-    'ciao':'hola','grazie':'gracias','si':'sí','buongiorno':'buenos días',
-    'olá':'hola','obrigado':'gracias','obrigada':'gracias','sim':'sí','não':'no','bom dia':'buenos días',
-    'hallo':'hola','danke':'gracias','ja':'sí','nein':'no','guten morgen':'buenos días'
+  function addConversationMessage(sourceChannel, text, options = {}) {
+    const message = {
+      id: Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      time: new Date(),
+      source: sourceChannel, // 'user' o 'infra'
+      text: String(text || '').trim(),
+      final: options.final !== false,
+      direction: options.direction || (sourceChannel === 'user' ? 'tx' : 'rx'),
+      protocol: !!options.protocol,
+      confidence: options.confidence || (options.final ? 0.95 : 0.6),
+      band: options.band || options.freq ? (options.freq ? options.freq.toFixed(1) + ' Hz' : 'infrasonido') : 'general'
+    };
+
+    conversationHistory.unshift(message);
+    lastConversationByChannel.set(sourceChannel, message);
+    renderConversation();
+  }
+
+  function renderConversation() {
+    if (conversationCount) {
+      conversationCount.textContent = conversationHistory.length + (conversationHistory.length === 1 ? ' mensaje' : ' mensajes');
+    }
+    if (!conversationList) return;
+
+    if (conversationHistory.length === 0) {
+      conversationList.innerHTML = '<div class="history-empty">La conversación aparecerá aquí: tu voz en celeste y las detecciones atribuidas al canal infrasónico en verde.</div>';
+      return;
+    }
+
+    conversationList.innerHTML = conversationHistory.map(m => {
+      const timeStr = m.time.toLocaleTimeString('es-ES', { hour12: false });
+      const isUser = m.source === 'user';
+      const cssClass = isUser ? 'user' : 'infra';
+      const badgeText = isUser ? 'Transmisión Local (Voz/TX)' : 'Recepción Canal (RX Infrasónico)';
+      const protoTag = m.protocol ? '<span class="voice-chip" style="margin-left:6px;font-size:9px;">Morse / Protocolo</span>' : '';
+      const confText = m.confidence ? ' · Confianza: ' + Math.round(m.confidence * 100) + '%' : '';
+
+      return `<div class="conversation-entry ${cssClass} ${m.direction}">
+        <div class="conv-row">
+          <span class="conv-source">${badgeText}</span>
+          <span>${timeStr} · ${m.band}${confText}</span>
+        </div>
+        <div class="conv-text">${escapeHtml(m.text)} ${protoTag}</div>
+      </div>`;
+    }).join('');
+  }
+
+  if (btnClearConversation) {
+    btnClearConversation.addEventListener('click', () => {
+      conversationHistory = [];
+      lastConversationByChannel.clear();
+      renderConversation();
+    });
+  }
+
+  if (btnDownloadConversation) {
+    btnDownloadConversation.addEventListener('click', () => {
+      if (conversationHistory.length === 0) {
+        alert('No hay mensajes en la conversación para exportar.');
+        return;
+      }
+      const headers = ['Timestamp', 'SourceChannel', 'Direction', 'Band', 'Confidence', 'Protocol', 'Text'];
+      const rows = conversationHistory.map(m => [
+        m.time.toISOString(),
+        m.source,
+        m.direction,
+        m.band,
+        m.confidence.toFixed(2),
+        m.protocol ? 'YES' : 'NO',
+        '"' + m.text.replace(/"/g, '""') + '"'
+      ]);
+      const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', 'conversacion_infrasonica_' + new Date().toISOString().slice(0,10) + '.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+  }
+
+  // ---------- Grabación de Audio de Sesión y Exportación JSON ----------
+  let sessionMediaRecorder = null;
+  let sessionAudioChunks = [];
+  let isRecordingSession = false;
+
+  if (btnRecordSession) {
+    btnRecordSession.addEventListener('click', () => {
+      if (!mediaStream) {
+        alert('Iniciá el barrido primero para activar el flujo de audio.');
+        return;
+      }
+      if (!isRecordingSession) {
+        try {
+          sessionAudioChunks = [];
+          sessionMediaRecorder = new MediaRecorder(mediaStream);
+          sessionMediaRecorder.ondataavailable = e => { if (e.data.size > 0) sessionAudioChunks.push(e.data); };
+          sessionMediaRecorder.onstop = () => {
+            const blob = new Blob(sessionAudioChunks, { type: 'audio/webm' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'sesion_audio_' + new Date().toISOString().replace(/[:.]/g, '-') + '.webm';
+            a.click();
+            URL.revokeObjectURL(url);
+          };
+          sessionMediaRecorder.start();
+          isRecordingSession = true;
+          btnRecordSession.textContent = '⏹ Detener grabación (audio)';
+          btnRecordSession.style.borderColor = 'var(--ink-red)';
+          btnRecordSession.style.color = 'var(--ink-red)';
+        } catch (err) {
+          alert('No se pudo iniciar la grabación de audio: ' + err.message);
+        }
+      } else {
+        if (sessionMediaRecorder && sessionMediaRecorder.state !== 'inactive') {
+          sessionMediaRecorder.stop();
+        }
+        isRecordingSession = false;
+        btnRecordSession.textContent = '⏺ Grabar sesión (audio)';
+        btnRecordSession.style.borderColor = 'var(--border)';
+        btnRecordSession.style.color = 'var(--text-primary)';
+      }
+    });
+  }
+
+  if (btnDownloadSessionJson) {
+    btnDownloadSessionJson.addEventListener('click', () => {
+      const sessionData = {
+        exportTimestamp: new Date().toISOString(),
+        quantumState,
+        prosodyState,
+        stats: {
+          anomaliesCount: history.length,
+          wordsCount: wordHistory.length,
+          eventsCount: wordEvents.length,
+          conversationCount: conversationHistory.length
+        },
+        wordHistory,
+        conversationHistory,
+        anomalyHistory: history,
+        eventsLog: wordEvents
+      };
+
+      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(sessionData, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute('href', dataStr);
+      downloadAnchor.setAttribute('download', 'sesion_completa_' + new Date().toISOString().replace(/[:.]/g, '-') + '.json');
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    });
+  }
+
+  // ---------- Fusión Cuántico-Inspirada / Q-Decode ----------
+  function quantumFuse(evidence = {}) {
+    const freq = evidence.freq || lastActiveFreq || 0;
+    const level = evidence.level || 1;
+    const speechCoincidence = !!evidence.speechCoincidence;
+    const temporalStability = evidence.temporalStability || Math.min(1, (hitStreak[Math.max(0, BINS.indexOf(freq))] || 0) / SUSTAIN_TICKS_REQUIRED);
+    const languageScore = evidence.languageScore || (wordHistory[0] ? wordHistory[0].conf : 0.5);
+
+    const phaseCoherence = Math.min(1, Math.max(0, (level - 1) / 3));
+    const entropy = Math.min(1, Math.max(0, 1 - (temporalStability * 0.5 + phaseCoherence * 0.5)));
+
+    // Si coincide con voz/habla, asignamos alta verosimilitud de origen local humano ('user');
+    // Si la estabilidad temporal es alta sin coincidencia directa de voz, se pondera como canal infrasónico ('infra').
+    let source = 'user';
+    let confidence = 0.5;
+
+    if (speechCoincidence) {
+      source = 'user';
+      confidence = 0.85 + (languageScore * 0.15);
+    } else if (level > sensitivity * 1.2 && temporalStability > 0.4) {
+      source = 'infra';
+      confidence = 0.60 + (phaseCoherence * 0.35);
+    } else {
+      source = languageScore > 0.75 ? 'user' : 'infra';
+      confidence = Math.max(0.3, (phaseCoherence + languageScore) / 2);
+    }
+
+    quantumState = { coherence: phaseCoherence, entropy, confidence, source };
+    return quantumState;
+  }
+
+  // ---------- Traducción Multilingüe Simulada / Offline Directa ----------
+  const MINI_DICTIONARY = {
+    es: {
+      en: { 'hola': 'hello', 'mundo': 'world', 'señal': 'signal', 'frecuencia': 'frequency', 'presencia': 'presence', 'canal': 'channel', 'onda': 'wave', 'patron': 'pattern', 'voz': 'voice', 'habla': 'speech' },
+      pt: { 'hola': 'olá', 'mundo': 'mundo', 'señal': 'sinal', 'frecuencia': 'frequência', 'presencia': 'presença', 'canal': 'canal', 'onda': 'onda', 'patron': 'padrão', 'voz': 'voz' },
+      fr: { 'hola': 'bonjour', 'mundo': 'monde', 'señal': 'signal', 'frecuencia': 'fréquence', 'presencia': 'présence', 'canal': 'canal', 'onda': 'onde', 'patron': 'motif', 'voz': 'voix' },
+      it: { 'hola': 'ciao', 'mundo': 'mondo', 'señal': 'segnale', 'frecuencia': 'frequenza', 'presencia': 'presenza', 'canal': 'canale', 'onda': 'onda', 'patron': 'modello', 'voz': 'voce' },
+      de: { 'hola': 'hallo', 'mundo': 'welt', 'señal': 'signal', 'frecuencia': 'frequenz', 'presencia': 'präsenz', 'canal': 'kanal', 'onda': 'welle', 'patron': 'muster', 'voz': 'stimme' }
+    }
   };
-  function detectLanguageHeuristic(text){
-    const t = text.toLowerCase();
-    if(/[¿¡]|\b(el|la|los|las|que|qué|como|cómo|está|estoy|hola|gracias|para|una|uno|yo|vos|tú)\b/.test(t)) return 'es';
-    if(/\b(the|hello|hi|you|are|is|am|this|that|thank|please|good|night|morning|help|here)\b/.test(t)) return 'en';
-    if(/\b(le|la|les|bonjour|merci|oui|non|avec|pour|vous|est)\b/.test(t)) return 'fr';
-    if(/\b(il|lo|gli|ciao|grazie|buongiorno|sono|per|con)\b/.test(t)) return 'it';
-    if(/\b(o|a|os|as|olá|obrigado|obrigada|você|para|com|sim|não)\b/.test(t)) return 'pt';
-    if(/\b(der|die|das|hallo|danke|und|nicht|ich|du|ist)\b/.test(t)) return 'de';
-    return 'unknown';
-  }
-  async function translateText(text, source='auto', target='es'){
-    const clean = String(text||'').trim(); if(!clean || source===target) return clean;
-    const key = source+'|'+target+'|'+clean.toLowerCase();
-    if(translationCache.has(key)) return translationCache.get(key);
-    const detected = source==='auto' ? detectLanguageHeuristic(clean) : source;
-    const fallback = fallbackTranslations[clean.toLowerCase()] || clean;
-    // MyMemory is used only as an optional network translation layer; failure falls back safely.
-    try {
-      const pair = (detected==='unknown'?'en':detected)+'|'+target;
-      const url = 'https://api.mymemory.translated.net/get?q='+encodeURIComponent(clean)+'&langpair='+encodeURIComponent(pair);
-      const res = await fetch(url, {method:'GET'});
-      if(res.ok){ const data=await res.json(); const out=data?.responseData?.translatedText; if(out && out.toLowerCase()!==clean.toLowerCase()){ translationCache.set(key,out); return out; } }
-    } catch(_) {}
-    translationCache.set(key,fallback);
-    return fallback;
-  }
-  async function translateWordItem(item){
-    const source = sourceLanguage.value, target = targetLanguage.value;
-    const translated = await translateText(item.text, source, target);
-    item.detectedLanguage = source==='auto' ? detectLanguageHeuristic(item.text) : source;
-    item.translation = translated;
-    item.targetLanguage = target;
-    renderWordHistory();
-  }
-  async function translateAllHistory(){
-    if(translationBusy || !wordHistory.length) return;
-    translationBusy=true; translationStatus.textContent='traduciendo…';
-    try { for(const item of wordHistory.slice().reverse()) await translateWordItem(item); }
-    finally { translationBusy=false; translationStatus.textContent=(sourceLanguage.value==='auto'?'auto':'manual')+' → '+targetLanguage.options[targetLanguage.selectedIndex].text; }
-  }
 
-  function renderWordHistory() {
-    wordHistoryCount.textContent = wordHistory.length + (wordHistory.length === 1 ? ' detección' : ' detecciones');
-    if (!wordHistory.length) {
-      wordHistoryList.innerHTML = '<div class="word-empty">Las palabras y sugerencias aparecerán aquí durante el barrido.</div>';
-      return;
+  async function translateTextOffline(text, srcLang = 'auto', tgtLang = 'es') {
+    const clean = String(text || '').trim();
+    if (!clean || tgtLang === 'es' && (srcLang === 'es' || srcLang === 'auto')) {
+      return { translatedText: clean, detectedLanguage: 'es' };
     }
-    wordHistoryList.innerHTML = wordHistory.map(item => {
-      const time = item.time.toLocaleTimeString('es-ES', { hour12:false });
-      const type = item.partial ? 'sugerencia audible' : 'palabra reconocida';
-      const confidence = item.conf > 0 ? Math.round(item.conf * 100) + '%' : 'sin porcentaje';
-      const infra = item.origin === 'infra';
-      const originLabel = infra ? 'Infrasonido' : 'Mi modulación';
-      const originClass = infra ? 'infra-origin' : 'user-origin';
-      const originColor = infra ? 'var(--ink-infra)' : 'var(--ink-user)';
-      const translation = item.translation && item.translation.toLowerCase() !== item.text.toLowerCase()
-        ? '<span class="translation">↳ '+escapeHtml(item.translation)+' <small>('+escapeHtml(item.targetLanguage||'es')+')</small></span>' : '';
-      return `<div class="word-entry ${originClass}${item.partial ? ' partial' : ''}">
-        <span class="word-time">${time}</span>
-        <span class="word-text" title="${escapeHtml(item.text)}"><span class="origin-badge" style="color:${originColor}">${originLabel}</span>${escapeHtml(item.text)}${translation}</span>
-        <span class="word-meta">${type} · ${confidence}<br>${escapeHtml(item.band||'')}${item.combined ? ' · modulación compuesta' : ''}${item.morse ? '<br>Morse original: '+escapeHtml(item.morse) : ''}<br>Prosodia: ${item.prosody?.pitch ? item.prosody.pitch.toFixed(0)+' Hz' : '—'} · ${escapeHtml(item.prosody?.contour||'—')}<br>Q ${(item.quantumConfidence||0)*100 | 0}%</span>
-      </div>`;
-    }).join('');
+    const key = srcLang + '|' + tgtLang + '|' + clean.toLowerCase();
+    if (translationCache.has(key)) return translationCache.get(key);
+
+    const words = clean.toLowerCase().split(/\s+/);
+    const dict = (MINI_DICTIONARY.es && MINI_DICTIONARY.es[tgtLang]) || {};
+    const translatedWords = words.map(w => dict[w] || w);
+    const result = {
+      translatedText: translatedWords.join(' '),
+      detectedLanguage: srcLang === 'auto' ? 'es' : srcLang
+    };
+
+    translationCache.set(key, result);
+    return result;
   }
 
-  function saveWordDetection(alt, isFinal, bandLabel, cadence, combined, signalMeta = {}) {
-    if (!alt || !alt.text) return;
-    const text = alt.text.replace(/\s+/g, ' ').trim();
-    if (!text) return;
-    const partial = !isFinal;
-    const q = quantumFuse({freq:signalMeta.freq ?? lastActiveFreq, level:signalMeta.level ?? 1, speechRecent:true, temporalStability:signalMeta.stability ?? 0.75, languageScore:alt.conf || 0.5});
-    const key = text.toLocaleLowerCase('es-ES') + '|' + partial;
-    const now = Date.now();
-    if (key === lastWordHistoryKey && now - lastWordHistoryAt < 2200) return;
-    lastWordHistoryKey = key;
-    lastWordHistoryAt = now;
-    wordHistory.unshift({ time:new Date(), text, conf:alt.conf || 0, partial, band:bandLabel, cadence:cadence ? cadence.tag : '', combined:!!combined,
-      origin:q.source, quantumConfidence:q.confidence, quantumEntropy:q.entropy, quantumCoherence:q.coherence, prosody:{pitch:prosodyState.pitch,intensityDb:prosodyState.intensityDb,rate:prosodyState.rate,contour:prosodyState.contour,voicing:prosodyState.voicing}, translation:'', targetLanguage:'es' });
-    if (wordHistory.length > 120) wordHistory.length = 120;
-    renderWordHistory();
-    // Mantiene siempre el original y agrega debajo la traducción.
-    translateWordItem(wordHistory[0]).then(()=>{const item=wordHistory[0];if(isFinal)speakOriginalAndTranslation(item.text,item.translation,item.detectedLanguage||detectLanguageHeuristic(item.text),'es');}).catch(()=>{if(isFinal)speakText(text,'es-ES','RX voz');});
-  }
+  async function translateAndApplyHistory() {
+    if (translationBusy) return;
+    translationBusy = true;
+    if (translationStatus) translationStatus.textContent = 'traduciendo…';
 
-  function saveReceivedWord(original,translated='',meta={}){
-    const text=String(original||'').replace(/\s+/g,' ').trim();if(!text)return;const now=Date.now(),key='rx|'+text.toLowerCase();
-    if(key===lastWordHistoryKey&&now-lastWordHistoryAt<900)return;lastWordHistoryKey=key;lastWordHistoryAt=now;
-    const detected=detectLanguageHeuristic(text);wordHistory.unshift({time:new Date(),text,conf:meta.confidence||0,partial:false,band:meta.band||'RX',cadence:'MORSE',combined:false,origin:'infra',quantumConfidence:meta.confidence||0,quantumEntropy:0,quantumCoherence:1,prosody:{pitch:0,intensityDb:0,rate:0,contour:'Morse',voicing:1},translation:translated||'',targetLanguage:'es',detectedLanguage:detected});
-    if(wordHistory.length>120)wordHistory.length=120;renderWordHistory();
-  }
+    const tgt = targetLanguage ? targetLanguage.value : 'es';
+    const src = sourceLanguage ? sourceLanguage.value : 'auto';
 
-  function renderWordEvents() {
-    wordEventCount.textContent = wordEvents.length + (wordEvents.length === 1 ? ' evento' : ' eventos');
-    if (!wordEvents.length) {
-      wordEventList.innerHTML = '<div class="word-empty">Los cambios de estado del reconocimiento aparecerán aquí.</div>';
-      return;
+    for (const item of wordHistory) {
+      if (!item.text) continue;
+      const res = await translateTextOffline(item.text, src, tgt);
+      item.translation = res.translatedText;
+      item.detectedLang = res.detectedLanguage;
     }
-    wordEventList.innerHTML = wordEvents.map(event => {
-      const time = event.time.toLocaleTimeString('es-ES', { hour12:false });
-      return `<div class="word-entry event ${event.kind}">
-        <span class="word-time">${time}</span>
-        <span class="word-text">${escapeHtml(event.state)}</span>
-        <span class="word-meta">${escapeHtml(event.detail)}</span>
-      </div>`;
-    }).join('');
+
+    renderWordHistory();
+    translationBusy = false;
+    if (translationStatus) translationStatus.textContent = (src === 'auto' ? 'auto' : src) + ' → ' + tgt;
   }
 
-  function saveWordEvent(state, detail, kind = '') {
+  if (btnTranslateHistory) btnTranslateHistory.addEventListener('click', translateAndApplyHistory);
+
+  function logWordEvent(type, text, details = '') {
+    const key = type + ':' + text + ':' + details;
     const now = Date.now();
-    const key = state + '|' + detail;
-    // Evita que los eventos repetidos del navegador llenen la lista sin ocultar
-    // transiciones reales de estado.
-    if (key === lastWordEventKey && now - lastWordEventAt < 900) return;
+    if (key === lastWordEventKey && (now - lastWordEventAt < 1000)) return;
     lastWordEventKey = key;
     lastWordEventAt = now;
-    wordEvents.unshift({ time:new Date(), state, detail, kind });
-    if (wordEvents.length > 80) wordEvents.length = 80;
+
+    const evt = {
+      time: new Date(),
+      type, // 'start', 'result_partial', 'result_final', 'end', 'error'
+      text: String(text || '').trim(),
+      details: String(details || '').trim()
+    };
+    wordEvents.unshift(evt);
     renderWordEvents();
   }
 
-  function showOfflineWord(text, isFinal) {
-    const modulation = getModulationProfile();
-    const bandLabel = modulation.label;
-    const cadence = modulation.cadence;
-    const alt = { text, conf:0 };
-    voiceCurrent.innerHTML = '<strong>Palabra audible: "' + escapeHtml(text) + '"</strong>'
-      + (isFinal ? ' · frase confirmada' : ' · resultado en curso')
-      + (modulation.combined ? ', apoyado por modulación compuesta' : '')
-      + ' · franja: <strong>' + bandLabel + '</strong>';
-    if (cadence) {
-      voiceCadence.className = 'voice-cadence' + (modulation.combined ? ' rapid' : '');
-      voiceCadence.innerHTML = '<span class="cad-tag">' + cadence.tag + '</span><span>' + cadence.label + ' (' + bandLabel + ')</span>';
-      voiceCadence.title = cadence.desc;
+  function renderWordEvents() {
+    if (wordEventCount) wordEventCount.textContent = wordEvents.length + (wordEvents.length === 1 ? ' evento' : ' eventos');
+    if (!wordEventList) return;
+
+    if (wordEvents.length === 0) {
+      wordEventList.innerHTML = '<div class="word-empty">Los cambios de estado del reconocimiento aparecerán aquí.</div>';
+      return;
     }
-    voiceAlts.innerHTML = '<span class="voice-chip top">' + escapeHtml(text) + '</span>';
-    playWordBeep(isFinal);
-    saveWordDetection(alt, isFinal, bandLabel, cadence, modulation.combined, {freq:lastActiveFreq, level:lastMagnitudes[BINS.indexOf(lastActiveFreq)] || 1, stability: recentModulations.length ? Math.min(1, recentModulations.length/8) : .5});
-    saveWordEvent(isFinal ? 'Palabra final (offline)' : 'Resultado en curso (offline)', text + ' · ' + bandLabel, isFinal ? '' : 'warning');
-    voiceStatus.textContent = isFinal ? 'frase completa · offline' : 'escuchando · offline';
+
+    wordEventList.innerHTML = wordEvents.map(e => {
+      const timeStr = e.time.toLocaleTimeString('es-ES', { hour12: false });
+      let badgeClass = 'event';
+      if (e.type === 'error') badgeClass += ' error';
+      if (e.type === 'result_partial') badgeClass += ' warning';
+
+      return `<div class="word-entry ${badgeClass}">
+        <div class="word-time">${timeStr}</div>
+        <div class="word-text"><strong>[${e.type.toUpperCase()}]</strong> ${escapeHtml(e.text)}</div>
+        <div class="word-meta">${escapeHtml(e.details)}</div>
+      </div>`;
+    }).join('');
   }
 
-  function startOfflineSpeech() {
-    if (!window.WebSocket) return false;
-    offlineMode = true;
-    offlineConfigured = false;
-    try {
-      offlineSocket = new WebSocket('ws://127.0.0.1:8765');
-    } catch (_) {
-      offlineMode = false;
-      return false;
+  function recordWordHistory(wordText, isFinal = false, confidence = 0.5, alternatives = []) {
+    const clean = String(wordText || '').trim();
+    if (!clean) return;
+
+    const key = (isFinal ? 'F:' : 'P:') + clean.toLowerCase();
+    const now = Date.now();
+    if (key === lastWordHistoryKey && (now - lastWordHistoryAt < 800)) return;
+    lastWordHistoryKey = key;
+    lastWordHistoryAt = now;
+
+    // Evaluamos hipótesis con fusión cuántico-inspirada
+    const speechCoincidence = true; // proviene del motor de voz directamente
+    const q = quantumFuse({
+      freq: lastActiveFreq || 0,
+      level: lastMagnitudes[BINS.indexOf(lastActiveFreq)] || 1,
+      speechCoincidence,
+      languageScore: confidence
+    });
+
+    const entry = {
+      time: new Date(),
+      text: clean,
+      final: isFinal,
+      conf: Math.max(0, Math.min(1, confidence)),
+      origin: q.source, // 'user' o 'infra'
+      quantumConfidence: q.confidence,
+      quantumEntropy: q.entropy,
+      quantumCoherence: q.coherence,
+      freqAt: lastActiveFreq,
+      cadenceProfile: getModulationProfile(),
+      alts: alternatives.map(a => String(a || '').trim()).filter(Boolean),
+      translation: '',
+      detectedLang: 'es'
+    };
+
+    if (isFinal) {
+      wordHistory.unshift(entry);
+      // Auto-traducción en segundo plano si hay un idioma meta distinto seleccionado
+      const tgt = targetLanguage ? targetLanguage.value : 'es';
+      if (tgt !== 'es') {
+        translateTextOffline(clean, 'auto', tgt).then(res => {
+          entry.translation = res.translatedText;
+          entry.detectedLang = res.detectedLanguage;
+          renderWordHistory();
+          speakOriginalAndTranslation(clean, res.translatedText, res.detectedLanguage, tgt);
+        });
+      } else {
+        speakOriginalAndTranslation(clean, '', 'es', 'es');
+      }
+
+      // Registro automático en el Canal de Conversación Bidireccional
+      addConversationMessage(
+        q.source,
+        clean,
+        { final: true, confidence, freq: lastActiveFreq, direction: q.source === 'user' ? 'tx' : 'rx' }
+      );
+    } else {
+      // Reemplazar parcial si el último era parcial
+      if (wordHistory.length && !wordHistory[0].final) {
+        wordHistory[0] = entry;
+      } else {
+        wordHistory.unshift(entry);
+      }
     }
-    offlineSocket.onopen = () => {
-      voiceStatus.textContent = 'conectado · offline';
-      voiceCurrent.textContent = 'Motor local listo. Hablá cerca del micrófono.';
-      saveWordEvent('Motor offline conectado', 'reconocimiento local listo');
-    };
-    offlineSocket.onmessage = event => {
-      try {
-        const result = JSON.parse(event.data);
-        if (result.text) showOfflineWord(result.text, result.type === 'final');
-      } catch (_) {}
-    };
-    offlineSocket.onerror = () => {
-      offlineMode = false;
-      voiceStatus.textContent = 'motor offline no iniciado';
-      voiceCurrent.textContent = 'No se encontró el motor local. Ejecutá primero "instalar_voz_offline.cmd" y después "iniciar_detector_offline.cmd".';
-      saveWordEvent('Motor offline no disponible', 'ejecutá el instalador y luego el iniciador', 'error');
-    };
-    offlineSocket.onclose = () => { if (offlineMode) offlineMode = false; };
-    return true;
+
+    renderWordHistory();
   }
 
-  function setupSpeechRecognition() {
+  function renderWordHistory() {
+    if (wordHistoryCount) {
+      wordHistoryCount.textContent = wordHistory.length + (wordHistory.length === 1 ? ' detección' : ' detecciones');
+    }
+    if (!wordHistoryList) return;
+
+    if (wordHistory.length === 0) {
+      wordHistoryList.innerHTML = '<div class="word-empty">Las palabras y sugerencias audibles aparecerán aquí durante el barrido.</div>';
+      return;
+    }
+
+    wordHistoryList.innerHTML = wordHistory.map(item => {
+      const timeStr = item.time.toLocaleTimeString('es-ES', { hour12: false });
+      const partialClass = item.final ? '' : ' partial';
+      const originClass = item.origin === 'infra' ? ' infra-origin' : ' user-origin';
+      const statusText = item.final ? 'final' : 'en curso';
+      const confPct = Math.round(item.conf * 100);
+      const qConfPct = Math.round((item.quantumConfidence || 0.5) * 100);
+      const originBadge = item.origin === 'infra'
+        ? '<span class="origin-badge" style="color:var(--ink-infra);">CANAL INFRA</span>'
+        : '<span class="origin-badge" style="color:var(--ink-user);">VOZ USER</span>';
+
+      const freqNote = item.freqAt ? ' · pico ' + item.freqAt.toFixed(1) + ' Hz' : '';
+
+      const cad = item.cadenceProfile;
+      const cadNote = cad && cad.cadence
+        ? ' · <span title="' + escapeHtml(cad.cadence.desc) + '">' + escapeHtml(cad.cadence.label) + '</span>'
+        : '';
+
+      const altStr = item.alts && item.alts.length
+        ? '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Alt: ' + escapeHtml(item.alts.join(', ')) + '</div>'
+        : '';
+
+      const translationStr = item.translation
+        ? `<div class="translation">Traducción (${item.detectedLang} → ${targetLanguage ? targetLanguage.value : 'es'}): <strong>${escapeHtml(item.translation)}</strong></div>`
+        : '';
+
+      const qStr = `<div style="font-size:9.5px;color:var(--text-muted);margin-top:2px;">Q-Score: ${qConfPct}% · Coherencia: ${Math.round((item.quantumCoherence||0)*100)}% · Entropía: Math.round((item.quantumEntropy||0)*100)%</div>`;
+
+      return `<div class="word-entry${partialClass}${originClass}">
+        <div>
+          ${originBadge}
+          <strong class="word-text">${escapeHtml(item.text)}</strong>
+          ${translationStr}
+          ${altStr}
+          ${qStr}
+        </div>
+        <div class="word-meta">
+          <span>${timeStr}</span><br>
+          <small>${statusText} · conf ${confPct}%${freqNote}${cadNote}</small>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderVoiceAlts(alternatives) {
+    if (!voiceAlts) return;
+    if (!alternatives || !alternatives.length) {
+      voiceAlts.innerHTML = '';
+      return;
+    }
+    voiceAlts.innerHTML = alternatives.map((alt, i) => {
+      const isTop = i === 0;
+      const chipClass = isTop ? 'voice-chip top' : 'voice-chip suggestion';
+      return `<span class="${chipClass}">${escapeHtml(alt)}</span>`;
+    }).join('');
+  }
+
+  function updateVoiceCadenceDisplay() {
+    if (!voiceCadence) return;
+    const profile = getModulationProfile();
+
+    if (!profile || !profile.cadence) {
+      voiceCadence.innerHTML = '<span class="cad-tag">0–20 HZ</span><span>Sin modulación de amplitud destacada</span>';
+      voiceCadence.className = 'voice-cadence';
+      return;
+    }
+
+    const cad = profile.cadence;
+    let cssClass = 'voice-cadence';
+    if (cad.tag === 'ARTICULACIÓN RÁPIDA' || cad.tag === 'CADENCIA ACELERADA') cssClass += ' rapid';
+    if (cad.tag === 'INFRASÓNICO' || cad.tag === 'PULSO LENTO') cssClass += ' infra';
+
+    voiceCadence.className = cssClass;
+    voiceCadence.innerHTML = `
+      <span class="cad-tag" title="${escapeHtml(cad.desc)}">${escapeHtml(cad.tag)} (${profile.label})</span>
+      <span>${escapeHtml(cad.label)}</span>
+    `;
+  }
+
+  function initSpeechRecognition() {
     if (!SpeechRecognitionImpl) {
-      voiceUnsupported.style.display = 'block';
-      voiceBox.style.display = 'none';
-      voiceStatus.textContent = 'no compatible';
-      return false;
+      if (voiceUnsupported) voiceUnsupported.style.display = 'block';
+      if (voiceBox) voiceBox.style.display = 'none';
+      if (voiceStatus) voiceStatus.textContent = 'no soportado';
+      initOfflineWebSocket();
+      return;
     }
-    voiceUnsupported.style.display = 'none';
-    voiceBox.style.display = 'block';
+
+    if (voiceUnsupported) voiceUnsupported.style.display = 'none';
+    if (voiceBox) voiceBox.style.display = 'block';
 
     recognition = new SpeechRecognitionImpl();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.maxAlternatives = 10;
-    // Usa la variante española configurada en el navegador (por ejemplo es-AR)
-    // para que el motor no intente interpretar una voz local como otro idioma.
-    const preferredSpanish = (navigator.languages || []).find(lang => /^es(?:-|$)/i.test(lang));
-    recognition.lang = preferredSpanish || (navigator.language && /^es(?:-|$)/i.test(navigator.language) ? navigator.language : 'es-AR');
+    recognition.lang = 'es-ES';
+    recognition.maxAlternatives = 4;
 
     recognition.onstart = () => {
       recognitionActive = true;
-      voiceStatus.textContent = 'escuchando';
-      saveWordEvent('Escuchando', 'micrófono de voz activo · ' + recognition.lang);
+      if (voiceStatus) voiceStatus.textContent = 'escuchando voz en vivo';
+      logWordEvent('start', 'Motor de voz nativo iniciado', 'Lang: es-ES');
     };
-    recognition.onerror = (e) => {
-      if (PERMISSION_ERRORS.includes(e.error)) {
-        // el navegador negó o revocó el permiso: dejamos de reintentar para no
-        // volver a mostrar el diálogo en bucle. Hay que habilitarlo manualmente.
+
+    recognition.onresult = (event) => {
+      lastSpeechAt = Date.now();
+      let interimTranscript = '';
+      let finalTranscript = '';
+      let topAlternatives = [];
+      let bestConfidence = 0.5;
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        const res = event.results[i];
+        const primary = res[0];
+        if (primary && primary.confidence) bestConfidence = primary.confidence;
+
+        // Recopilamos alternativas de la transcripción
+        const alts = [];
+        for (let j = 0; j < res.length; j++) {
+          if (res[j] && res[j].transcript) alts.push(res[j].transcript.trim());
+        }
+        topAlternatives = alts;
+
+        if (res.isFinal) {
+          finalTranscript += primary.transcript;
+        } else {
+          interimTranscript += primary.transcript;
+        }
+      }
+
+      const currentDisplay = finalTranscript || interimTranscript;
+      if (voiceCurrent && currentDisplay) {
+        voiceCurrent.textContent = currentDisplay;
+      }
+
+      renderVoiceAlts(topAlternatives);
+      updateVoiceCadenceDisplay();
+
+      if (interimTranscript) {
+        playWordBeep(false);
+        recordWordHistory(interimTranscript, false, bestConfidence, topAlternatives);
+        logWordEvent('result_partial', interimTranscript, 'Conf: ' + Math.round(bestConfidence * 100) + '%');
+      }
+
+      if (finalTranscript) {
+        playWordBeep(true);
+        recordWordHistory(finalTranscript, true, bestConfidence, topAlternatives);
+        logWordEvent('result_final', finalTranscript, 'Conf: ' + Math.round(bestConfidence * 100) + '%');
+      }
+    };
+
+    recognition.onerror = (event) => {
+      const err = event.error;
+      logWordEvent('error', 'Error en voz', err);
+
+      if (PERMISSION_ERRORS.includes(err)) {
         recognitionShouldRun = false;
-        voiceStatus.textContent = 'permiso denegado';
-        saveWordEvent('Permiso denegado', 'el navegador bloqueó el reconocimiento', 'error');
-        voiceCurrent.textContent = speechErrorMessage(e.error) + ' Habilitalo desde el ícono de candado/sitio en la barra del navegador y volvé a presionar "Iniciar barrido".';
+        if (voiceStatus) voiceStatus.textContent = 'permiso denegado';
+        alert(speechErrorMessage(err));
         return;
       }
-      if (e.error === 'no-speech' || e.error === 'aborted') {
-        saveWordEvent(e.error === 'no-speech' ? 'Sin voz' : 'Reconocimiento cancelado', 'sin palabra propuesta', 'warning');
+
+      if (err === 'no-speech') {
+        // Silencio habitual, reiniciar pacíficamente si sigue activo
         return;
       }
-      voiceStatus.textContent = 'error: ' + e.error;
-      const errorMessage = speechErrorMessage(e.error);
-      saveWordEvent('Error: ' + e.error, errorMessage, 'error');
-      voiceCurrent.textContent = errorMessage;
-      if (e.error === 'language-not-supported' && recognition.lang !== 'es-ES') {
-        recognition.lang = 'es-ES';
-        saveWordEvent('Idioma alternativo', 'se cambió el reconocimiento a es-ES', 'warning');
-      }
+
+      if (voiceStatus) voiceStatus.textContent = 'error: ' + err;
     };
+
     recognition.onend = () => {
       recognitionActive = false;
-      if (!recognitionShouldRun) {
-        voiceStatus.textContent = 'inactivo';
-        saveWordEvent('Detenido', 'reconocimiento de voz inactivo');
-        return;
-      }
+      logWordEvent('end', 'Motor de voz detenido', '');
 
-      // límite de reintentos: si se reinicia demasiadas veces seguidas, algo anda
-      // mal (posible conflicto de permisos) y frenamos para no repetir el diálogo
-      const now = Date.now();
-      if (now - recentRestartsWindowStart > RESTART_WINDOW_MS) {
-        recentRestartsWindowStart = now;
-        recentRestarts = 0;
-      }
-      recentRestarts++;
-      if (recentRestarts > MAX_RESTARTS_PER_WINDOW) {
-        recognitionShouldRun = false;
-        voiceStatus.textContent = 'detenido (bucle evitado)';
-        saveWordEvent('Detenido por seguridad', 'demasiados reinicios seguidos', 'error');
-        voiceCurrent.textContent = 'El reconocimiento de voz se reinició demasiadas veces seguidas y se detuvo para evitar pedir permiso en bucle. Podés reactivarlo con "Detener" y luego "Iniciar barrido" otra vez.';
-        return;
-      }
-
-      if (restartTimer) clearTimeout(restartTimer);
-      restartTimer = setTimeout(() => {
-        if (recognitionShouldRun && !recognitionActive) {
-          try { recognition.start(); } catch (_) {}
+      if (recognitionShouldRun) {
+        // Evitamos bucles infinitos de reinicio rápido en caso de fallo continuo de red/servicio
+        const now = Date.now();
+        if (now - recentRestartsWindowStart > RESTART_WINDOW_MS) {
+          recentRestartsWindowStart = now;
+          recentRestarts = 0;
         }
-      }, RESTART_DELAY_MS);
-    };
-    recognition.onresult = (event) => {
-      let lastResult = null;
-      for (let i = event.resultIndex; i < event.results.length; i++) lastResult = event.results[i];
-      if (!lastResult) return;
-      lastSpeechAt = Date.now();
+        recentRestarts++;
 
-      const alts = [];
-      for (let j = 0; j < lastResult.length; j++) {
-        alts.push({ text: lastResult[j].transcript.trim(), conf: lastResult[j].confidence || 0 });
-      }
-      alts.sort((a, b) => b.conf - a.conf);
+        if (recentRestarts > MAX_RESTARTS_PER_WINDOW) {
+          if (voiceStatus) voiceStatus.textContent = 'reintentos pausados';
+          logWordEvent('error', 'Pausa de seguridad', 'Demasiados reinicios rápidos');
+          return;
+        }
 
-      const modulation = getModulationProfile();
-      const bandLabel = modulation.label;
-      const cadence = modulation.cadence;
-      const bestAudible = alts.find(a => a.text);
-
-      if (bestAudible) {
-        const pct = bestAudible.conf ? Math.round(bestAudible.conf * 100) + '%' : 'sin porcentaje';
-        voiceCurrent.innerHTML = '<strong>Palabra audible: "' + escapeHtml(bestAudible.text) + '"</strong>'
-          + ' · ' + pct + (lastResult.isFinal ? '' : ' · resultado en curso') + (modulation.combined ? ', apoyado por modulación compuesta' : '')
-          + ' · franja: <strong>' + bandLabel + '</strong>';
-      } else if (lastResult.isFinal) {
-        voiceCurrent.textContent = 'Voz detectada, pero el reconocimiento no propuso una palabra (franja activa: ' + bandLabel + ').';
+        restartTimer = setTimeout(() => {
+          if (recognitionShouldRun && !recognitionActive) {
+            try { recognition.start(); } catch (_) {}
+          }
+        }, RESTART_DELAY_MS);
       } else {
-        voiceCurrent.textContent = '… escuchando (todavía sin palabra propuesta) — franja activa: ' + bandLabel;
+        if (voiceStatus) voiceStatus.textContent = 'inactivo';
       }
-
-      if (cadence) {
-        const cls = cadence.tag.includes('ARTICULACIÓN') || cadence.tag.includes('FRICATIVO') ? 'rapid'
-          : cadence.tag.includes('INFRASÓNICO') ? 'infra' : '';
-        voiceCadence.className = 'voice-cadence' + (cls ? ' ' + cls : '');
-        voiceCadence.innerHTML = '<span class="cad-tag">' + cadence.tag + '</span>'
-          + ' <span>' + cadence.label + ' (' + bandLabel + ')</span>';
-        voiceCadence.title = cadence.desc;
-      }
-
-      voiceAlts.innerHTML = alts.filter(a => a.text).map((a, idx) => {
-        const pct = a.conf ? Math.round(a.conf * 100) + '%' : 'sin dato';
-        return `<span class="voice-chip top">${escapeHtml(a.text)} · ${pct}</span>`;
-      }).join('');
-      // Conserva también la hipótesis incompleta: una confianza baja sigue siendo
-      // útil como pista cuando la cadencia ya indica modulación de habla.
-      if (bestAudible) saveWordDetection(bestAudible, lastResult.isFinal, bandLabel, cadence, modulation.combined, {freq:lastActiveFreq, level:lastMagnitudes[BINS.indexOf(lastActiveFreq)] || 1, stability: recentModulations.length ? Math.min(1, recentModulations.length/8) : .5});
-      if (bestAudible) {
-        playWordBeep(lastResult.isFinal);
-        saveWordEvent(lastResult.isFinal ? 'Palabra final' : 'Resultado en curso', bestAudible.text + ' · ' + bandLabel, lastResult.isFinal ? '' : 'warning');
-      } else {
-        saveWordEvent(lastResult.isFinal ? 'Sin palabra propuesta' : 'Escuchando', 'franja: ' + bandLabel, 'warning');
-      }
-      voiceStatus.textContent = lastResult.isFinal ? 'frase completa' : 'escuchando…';
     };
-    return true;
+
+    initOfflineWebSocket();
   }
 
-  function startSpeech() {
-    if (startOfflineSpeech()) return;
-    if (!SpeechRecognitionImpl) return;
-    if (!recognition && !setupSpeechRecognition()) return;
-    if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
-    recentRestarts = 0;
-    recentRestartsWindowStart = Date.now();
-    recognitionShouldRun = true;
-    if (!recognitionActive) {
-      try { recognition.start(); } catch (_) {}
+  // ---------- Reconocimiento Offline opcional por WebSocket ----------
+  function initOfflineWebSocket() {
+    if (offlineSocket) return;
+    try {
+      // Intento de conexión local con servidor de transcripción offline (Vosk/Whisper local)
+      const ws = new WebSocket('ws://localhost:2700');
+      ws.onopen = () => {
+        offlineMode = true;
+        offlineSocket = ws;
+        if (voiceStatus) voiceStatus.textContent = 'escuchando (offline WebSocket + WebSpeech)';
+        logWordEvent('start', 'Canal offline WebSocket conectado', 'ws://localhost:2700');
+      };
+
+      ws.onmessage = (evt) => {
+        try {
+          const data = JSON.parse(evt.data);
+          if (data.text) {
+            playWordBeep(true);
+            recordWordHistory(data.text, true, 0.90, []);
+            logWordEvent('result_final', data.text, 'WebSocket Offline');
+          } else if (data.partial) {
+            playWordBeep(false);
+            recordWordHistory(data.partial, false, 0.50, []);
+            logWordEvent('result_partial', data.partial, 'WebSocket Offline');
+          }
+        } catch (_) {}
+      };
+
+      ws.onerror = () => { offlineMode = false; offlineSocket = null; };
+      ws.onclose = () => { offlineMode = false; offlineSocket = null; };
+    } catch (_) {
+      offlineMode = false;
+      offlineSocket = null;
     }
   }
 
-  function stopSpeech() {
-    offlineMode = false;
-    if (offlineSocket) { try { offlineSocket.close(); } catch (_) {} }
-    offlineSocket = null;
-    recognitionShouldRun = false;
-    if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
-    if (recognition) { try { recognition.stop(); } catch (_) {} }
-    voiceStatus.textContent = 'inactivo';
+  function startSpeechRecognition() {
+    recognitionShouldRun = true;
+    if (recognition && !recognitionActive) {
+      try {
+        recognition.start();
+      } catch (e) {
+        logWordEvent('error', 'Fallo al iniciar reconocimiento', e.message);
+      }
+    }
   }
 
-  setupSpeechRecognition();
+  function stopSpeechRecognition() {
+    recognitionShouldRun = false;
+    if (restartTimer) clearTimeout(restartTimer);
+    if (recognition && recognitionActive) {
+      try {
+        recognition.stop();
+      } catch (_) {}
+    }
+    if (offlineSocket) {
+      try { offlineSocket.close(); } catch (_) {}
+      offlineSocket = null;
+      offlineMode = false;
+    }
+    if (voiceStatus) voiceStatus.textContent = 'inactivo';
+  }
 
-  // ---------- Controles ----------
+  // ---------- Controles de UI ----------
   btnStart.addEventListener('click', async () => {
     btnStart.disabled = true;
-    // Algunos navegadores rechazan el reconocimiento si otro módulo tomó el
-    // micrófono primero; por eso iniciamos la voz antes del analizador.
-    startSpeech();
     const ok = await startAudio();
-    if (!ok) { stopSpeech(); btnStart.disabled = false; return; }
-    morseResetRx();
-    calibrating = true; sweeping = false; anomalyLocked = false;
+    if (!ok) {
+      btnStart.disabled = false;
+      return;
+    }
+
+    // Inicializar calibración
+    calibrating = true;
+    sweeping = false;
     calibrationStart = performance.now();
-    baseline = new Array(BINS.length).fill(0);
-    baselineInit = new Array(BINS.length).fill(false);
-    hitStreak = new Array(BINS.length).fill(0);
-    cooldown = new Array(BINS.length).fill(0);
+    baselineInit.fill(false);
+    hitStreak.fill(0);
+    cooldown.fill(0);
     setStatus('calibrating', 'Calibrando línea base…');
-    btnStop.disabled = false;
+
+    // Intervalo de procesamiento de frecuencia (Goertzel sobre envolvente)
+    if (analysisTimer) clearInterval(analysisTimer);
     analysisTimer = setInterval(analysisTick, ANALYSIS_INTERVAL_MS);
+
+    btnStop.disabled = false;
+
+    // Iniciar reconocimiento de voz en vivo en paralelo
+    startSpeechRecognition();
   });
 
   btnStop.addEventListener('click', () => {
-    clearInterval(analysisTimer);
-    if (flashTimeout) clearTimeout(flashTimeout);
-    calibrating = false; sweeping = false;
-    if (sessionRecording) toggleSessionRecording();
+    btnStart.disabled = false;
+    btnStop.disabled = true;
+
+    calibrating = false;
+    sweeping = false;
+    if (analysisTimer) clearInterval(analysisTimer);
+
     stopAudio();
-    stopSpeech();
+    stopSpeechRecognition();
     setStatus('standby', 'En espera');
-    btnStart.disabled = false; btnStop.disabled = true;
-    readFreq.textContent = '—'; readLevel.textContent = '—';
   });
 
   btnRefresh.addEventListener('click', () => {
-    clearInterval(analysisTimer);
-    if (flashTimeout) clearTimeout(flashTimeout);
-    if (sessionRecording) toggleSessionRecording();
+    // Detener todo si estaba corriendo
+    btnStart.disabled = false;
+    btnStop.disabled = true;
+    calibrating = false;
+    sweeping = false;
+    if (analysisTimer) clearInterval(analysisTimer);
+
     stopAudio();
-    stopSpeech();
-    calibrating = false; sweeping = false; anomalyLocked = false;
+    stopSpeechRecognition();
+
+    // Reset de datos y visualización
     history = [];
     wordHistory = [];
-    translationCache.clear();
-    lastWordHistoryKey = '';
-    lastWordHistoryAt = 0;
     wordEvents = [];
-    lastWordEventKey = '';
-    lastWordEventAt = 0;
+    conversationHistory = [];
+    lastConversationByChannel.clear();
+    recentModulations = [];
+    lastActiveFreq = null;
+    baseline.fill(0);
+    baselineInit.fill(false);
+    hitStreak.fill(0);
+    cooldown.fill(0);
+    lastMagnitudes.fill(0);
+
     renderHistory();
     renderWordHistory();
     renderWordEvents();
+    renderConversation();
+
+    readFreq.textContent = '—';
+    readLevel.textContent = '—';
+    if (voiceCurrent) voiceCurrent.textContent = 'Sin voz detectada todavía.';
+    if (voiceAlts) voiceAlts.innerHTML = '';
+    if (voiceCadence) {
+      voiceCadence.className = 'voice-cadence';
+      voiceCadence.innerHTML = '';
+    }
+
     setStatus('standby', 'En espera');
-    btnStart.disabled = false; btnStop.disabled = true;
-    readFreq.textContent = '—'; readLevel.textContent = '—'; readWindow.textContent = '—';
-    lastMagnitudes = new Array(BINS.length).fill(0);
-    cooldown = new Array(BINS.length).fill(0);
-    hitStreak = new Array(BINS.length).fill(0);
-    voiceCurrent.textContent = 'Sin voz detectada todavía.';
-    voiceAlts.innerHTML = '';
-    voiceCadence.innerHTML = '';
-    voiceCadence.className = 'voice-cadence';
-    recentModulations = [];
-    morseResetRx();
-    if (duplexProtocolStatus) duplexProtocolStatus.textContent = 'esperando señal';
-    if (duplexMessageInput) duplexMessageInput.value = '';
   });
 
-  renderHistory();
-  renderWordHistory();
-  renderWordEvents();
+  // Inicialización de voz al cargar
+  initSpeechRecognition();
 
-  window.addEventListener('beforeunload', () => {
-    if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
-    if (alertAudioCtx) { try { alertAudioCtx.close(); } catch (_) {} }
-  });
 })();
 </script>
 </body>
 </html>
+
