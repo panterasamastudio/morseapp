@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Registrador de Barrido — 0–20 Hz</title>
+<title>Registrador Espectral — 0–5000 Hz</title>
 <style>
   :root{
     --bg:#0a0e0f;
@@ -229,7 +229,7 @@
 
   <header>
     <div class="title-block">
-      <h1>Registrador de Barrido 0–20 Hz</h1>
+      <h1>Registrador Espectral 0–5000 Hz</h1>
       <div class="sub">Análisis de modulación de amplitud del sonido ambiente · micrófono en vivo</div>
     </div>
     <div class="status-pill standby" id="statusPill">
@@ -313,7 +313,8 @@
           <div class="disclaimer" style="margin-top:0;margin-bottom:12px;border-top:none;padding-top:0;">
             La amplificación mic + AGC solo afecta al canal <strong>audible</strong> (prosodia y
             reconocimiento offline por WebSocket), útil con voz floja o ambientes ruidosos. El barrido
-            0–20&nbsp;Hz y el receptor Morse usan un segundo canal con la señal <strong>cruda</strong> del
+            El análisis espectral 0–5000&nbsp;Hz usa la señal <strong>cruda</strong>; el receptor Morse emplea
+            en paralelo una banda audible filtrada de <strong>350–1800 Hz</strong>.
             micrófono, sin ganancia ni compresor, para no distorsionar los bordes de encendido/apagado ni la
             modulación de amplitud que necesitan medir. El reconocimiento de voz nativo del navegador (Web
             Speech API online) capta el micrófono por su cuenta y tampoco pasa por ninguna de las dos cadenas.
@@ -457,7 +458,9 @@
 <script>
 (() => {
   // ---------- Constantes de análisis ----------
-  const FREQ_MIN = 0.5, FREQ_MAX = 20, FREQ_STEP = 0.5;
+  // El analizador espectral conserva el rango completo, incluido DC (0 Hz).
+  // Morse no consume esta cadena: tiene su propio filtro audible más abajo.
+  const FREQ_MIN = 0, FREQ_MAX = 5000, FREQ_STEP = 25;
   const BINS = [];
   for (let f = FREQ_MIN; f <= FREQ_MAX + 1e-9; f += FREQ_STEP) BINS.push(Math.round(f * 10) / 10);
 
@@ -468,13 +471,14 @@
   const BASELINE_EMA_ALPHA = 0.03;
 
   // ---------- Estado ----------
-  // Dos cadenas de audio independientes desde el mismo micrófono:
+  // Tres cadenas independientes desde el mismo micrófono:
   //  - "audible": pasa por ganancia + AGC, alimenta voz (Web Speech / offline) y prosodia.
-  //  - "infra/morse": señal cruda, sin ganancia ni compresor, alimenta el barrido 0–20 Hz
-  //    y el receptor Morse. El AGC deforma justo lo que estos dos necesitan medir
-  //    (bordes de encendido/apagado y modulación de amplitud lenta), así que no la tocan.
+  //  - "espectral": señal cruda para el análisis de 0–5000 Hz; DC se conserva como 0 Hz.
+  //  - "morse": señal cruda filtrada estrictamente entre 350 y 1800 Hz. Así DC,
+  //    infrabajas, golpes y movimientos nunca pueden activar el decodificador.
   let audioCtx = null, mediaStream = null, sourceNode = null, processorNode = null, silentGain = null;
-  let rawProcessorNode = null, rawSilentGain = null;
+  let rawProcessorNode = null, rawSilentGain = null, spectralAnalyser = null, spectralSilentGain = null;
+  let morseHighPass = null, morseLowPass = null;
   const soundToggle = document.getElementById('soundToggle');
   const ttsVoiceSelect = document.getElementById('ttsVoice'), ttsRateRange = document.getElementById('ttsRate'), ttsRateVal = document.getElementById('ttsRateVal'), rxVoiceStatus = document.getElementById('rxVoiceStatus');
   let ttsRate = 0.95, ttsSpeaking = false, ttsQueue = Promise.resolve();
@@ -609,11 +613,9 @@
   let flashTimeout = null;
   const COOLDOWN_MS = 4000;
   const FLASH_MS = 1400;
-  // Por encima de este umbral (dentro del rango 0-20Hz) suelen aparecer sonidos
-  // "nítidos" normales del entorno (voz, palmadas, consonantes) que no son
-  // anomalías reales: se exige un nivel mucho más alto para que disparen algo ahí.
-  const HIGH_BAND_CUTOFF = 15;
-  const HIGH_BAND_MULT = 2.2;
+  // Un umbral uniforme mantiene comparables todas las bandas del espectro.
+  const HIGH_BAND_CUTOFF = FREQ_MAX;
+  const HIGH_BAND_MULT = 1;
   // Más allá del umbral normal de disparo, esto marca una anomalía como "crítica"
   const CRITICAL_MULTIPLIER = 1.8;
 
@@ -796,11 +798,10 @@
       }
     };
 
-    // ---- Canal INFRASONIDO / MORSE: barrido 0–20 Hz + receptor Morse ----
-    // Se alimenta de la señal CRUDA del micrófono, antes de la ganancia y del compresor.
-    // El AGC nivela el volumen en tiempo real, que es exactamente lo contrario de lo que
-    // hace falta acá: tanto el barrido (mide cómo varía la amplitud) como el Morse (mide
-    // bordes de encendido/apagado de un tono) necesitan la envolvente real, sin alisar.
+    // ---- Canal MORSE: filtro audible dedicado 350–1800 Hz ----
+    // Es independiente del analizador espectral: sólo esta banda llega a la detección
+    // on/off de Morse. Por construcción, 0 Hz, 0,5–2 Hz y los golpes no pueden producir
+    // puntos ni rayas.
     rawProcessorNode = audioCtx.createScriptProcessor(bufferSize, 1, 1);
     rawProcessorNode.onaudioprocess = (e) => {
       const data = e.inputBuffer.getChannelData(0);
@@ -808,8 +809,8 @@
       for (let i = 0; i < data.length; i++) sumSq += data[i] * data[i];
       const rms = Math.sqrt(sumSq / data.length);
       morseFeedAudio(data, audioCtx.sampleRate, performance.now());
-      envBuffer.push(rms);
-      if (envBuffer.length > envCapacity) envBuffer.shift();
+      // Se conserva la envolvente para indicadores locales, no para decodificar Morse.
+      envBuffer.push(rms); if (envBuffer.length > envCapacity) envBuffer.shift();
     };
 
     // Cadena de amplificación: sourceNode -> ganancia ajustable -> compresor (AGC) -> analizador audible.
@@ -827,15 +828,29 @@
     processorNode.connect(silentGain);
     silentGain.connect(audioCtx.destination);
 
-    // Segundo camino, en paralelo y sin pasar por micGain/compressorNode: señal cruda
-    // directa desde el micrófono hacia el canal infrasonido/Morse.
+    // Camino Morse: señal cruda -> pasa-altos 350 Hz -> pasa-bajos 1800 Hz -> receptor.
     rawSilentGain = audioCtx.createGain();
     rawSilentGain.gain.value = 0;
-    sourceNode.connect(rawProcessorNode);
+    morseHighPass = audioCtx.createBiquadFilter();
+    morseHighPass.type = 'highpass'; morseHighPass.frequency.value = 350; morseHighPass.Q.value = 0.707;
+    morseLowPass = audioCtx.createBiquadFilter();
+    morseLowPass.type = 'lowpass'; morseLowPass.frequency.value = 1800; morseLowPass.Q.value = 0.707;
+    sourceNode.connect(morseHighPass);
+    morseHighPass.connect(morseLowPass);
+    morseLowPass.connect(rawProcessorNode);
     rawProcessorNode.connect(rawSilentGain);
     rawSilentGain.connect(audioCtx.destination);
 
-    readWindow.textContent = WINDOW_SECONDS + ' s · ' + sampleRateEff.toFixed(1) + ' Hz muestreo';
+    // Camino espectral independiente: 0–5000 Hz, incluido el bin de DC (0 Hz).
+    spectralAnalyser = audioCtx.createAnalyser();
+    spectralAnalyser.fftSize = 16384;
+    spectralAnalyser.smoothingTimeConstant = 0.35;
+    spectralSilentGain = audioCtx.createGain(); spectralSilentGain.gain.value = 0;
+    sourceNode.connect(spectralAnalyser);
+    spectralAnalyser.connect(spectralSilentGain);
+    spectralSilentGain.connect(audioCtx.destination);
+
+    readWindow.textContent = 'Espectro 0–5000 Hz · FFT 16384';
     return true;
   }
 
@@ -847,24 +862,31 @@
     if (sourceNode) sourceNode.disconnect();
     if (silentGain) silentGain.disconnect();
     if (rawSilentGain) rawSilentGain.disconnect();
+    if (spectralAnalyser) spectralAnalyser.disconnect();
+    if (spectralSilentGain) spectralSilentGain.disconnect();
+    if (morseHighPass) morseHighPass.disconnect();
+    if (morseLowPass) morseLowPass.disconnect();
     if (audioCtx) audioCtx.close();
     // OJO: no detenemos mediaStream.getTracks() a propósito — así el permiso
     // del micrófono queda concedido y el próximo "Iniciar barrido" no lo vuelve a pedir.
     audioCtx = null; sourceNode = null; processorNode = null; micGain = null; compressorNode = null;
-    rawProcessorNode = null; rawSilentGain = null;
+    rawProcessorNode = null; rawSilentGain = null; spectralAnalyser = null; spectralSilentGain = null;
+    morseHighPass = null; morseLowPass = null;
     offlineConfigured = false;
   }
 
   // ---------- Ciclo de análisis ----------
   function analysisTick() {
-    if (envBuffer.length < Math.min(envCapacity, sampleRateEff * 1.5)) return; // esperar suficientes muestras
-
-    const samples = envBuffer.slice(-envCapacity);
-    // restar la media para evitar que el componente DC domine el bin más bajo
-    const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
-    const centered = samples.map(v => v - mean);
-
-    const mags = BINS.map(f => goertzelMagnitude(centered, sampleRateEff, f));
+    if (!spectralAnalyser || !audioCtx) return;
+    // Espectro acústico crudo: el bin 0 representa DC y no se elimina la media.
+    const spectrumDb = new Float32Array(spectralAnalyser.frequencyBinCount);
+    spectralAnalyser.getFloatFrequencyData(spectrumDb);
+    const hzPerBin = audioCtx.sampleRate / spectralAnalyser.fftSize;
+    const mags = BINS.map(f => {
+      const bin = Math.min(spectrumDb.length - 1, Math.max(0, Math.round(f / hzPerBin)));
+      const db = spectrumDb[bin];
+      return Number.isFinite(db) ? Math.pow(10, db / 20) : 0;
+    });
     lastMagnitudes = mags;
 
     if (calibrating) {
@@ -878,7 +900,7 @@
       if (remaining <= 0) {
         calibrating = false;
         sweeping = true;
-        setStatus('sweeping', 'Barriendo 0–20 Hz');
+        setStatus('sweeping', 'Barriendo 0–5000 Hz');
       }
       return;
     }
@@ -939,21 +961,18 @@
       tag = 'PULSO';
       description = 'Un único pico agudo y aislado por debajo de 4 Hz. Es consistente con un evento puntual y corto ' +
         '(un impacto, un paso, una puerta) más que con un patrón que se repite en el tiempo.';
-    } else if (freq < 8) {
-      label = 'Patrón rítmico de baja frecuencia (4–8 Hz)';
+    } else if (freq < 80) {
+      label = 'Patrón de baja frecuencia (4–80 Hz)';
       tag = 'RÍTMICO';
-      description = 'Una oscilación estrecha y sostenida en esta banda, compatible con una fuente que pulsa de forma regular ' +
-        '—por ejemplo un motor a baja carga, un ventilador o una vibración mecánica de ciclo lento.';
-    } else if (freq < 13) {
-      label = 'Patrón periódico medio (8–13 Hz)';
+      description = 'Una componente estrecha y sostenida de baja frecuencia, compatible con una fuente que pulsa de forma regular.';
+    } else if (freq < 1000) {
+      label = 'Tono o patrón periódico medio (80–1000 Hz)';
       tag = 'PERIÓDICO';
-      description = 'Modulación regular y estrecha en esta banda intermedia, típica de vibraciones mecánicas de régimen ' +
-        'medio o de un golpeteo/tapping con cadencia constante.';
+      description = 'Una componente estrecha y sostenida en la banda media, compatible con un tono, zumbido o fuente mecánica.';
     } else {
-      label = 'Vibración periódica rápida (13–20 Hz)';
-      tag = 'VIBRACIÓN';
-      description = 'Oscilación estrecha cerca del límite superior del rango analizado, coherente con zumbido de motor, ' +
-        'maquinaria en marcha u otra fuente mecánica de ciclo rápido.';
+      label = 'Tono o patrón periódico alto (1000–5000 Hz)';
+      tag = 'TONO';
+      description = 'Una componente estrecha y sostenida de la banda alta, compatible con un tono acústico o zumbido.';
     }
 
     // recurrencia con historial
@@ -982,7 +1001,7 @@
     };
 
     // si hubo voz/habla detectada justo antes, lo aclaramos: la modulación
-    // rítmica del habla puede generar exactamente este tipo de patrón 0-20Hz
+    // rítmica del habla puede generar exactamente este tipo de patrón de baja frecuencia
     const speechRecent = (Date.now() - lastSpeechAt) <= SPEECH_COINCIDENCE_MS;
     entry.speechCoincidence = speechRecent;
     if (speechRecent) {
@@ -998,8 +1017,8 @@
       { freq, level, direction:'rx', protocol:false }
     );
     // Nota: la recepción del canal bidireccional ya no depende de este pico del barrido
-    // 0-20Hz — el receptor Morse (morseFeedSample) corre en paralelo, con resolución fina
-    // de tiempo, alimentado directamente desde cada bloque de audio.
+    // El receptor Morse corre en paralelo, con resolución fina de tiempo y con su
+    // propia banda audible filtrada; nunca recibe este pico espectral.
     // Si existe una palabra reciente y la evidencia infrasónica domina, la misma palabra
     // queda marcada en el Historial de palabras como procedente del canal infra.
     const q = quantumFuse({freq, level, speechRecent, temporalStability:Math.min(1, (hitStreak[idx]+1)/SUSTAIN_TICKS_REQUIRED), languageScore:wordHistory[0]?.conf || .5});
@@ -1020,7 +1039,7 @@
     setStatus('anomaly', 'Anomalía detectada · ' + freq.toFixed(1) + ' Hz — monitoreo continúa');
     if (flashTimeout) clearTimeout(flashTimeout);
     flashTimeout = setTimeout(() => {
-      if (sweeping) setStatus('sweeping', 'Barriendo 0–20 Hz');
+      if (sweeping) setStatus('sweeping', 'Barriendo 0–5000 Hz');
     }, FLASH_MS);
   }
 
@@ -1287,13 +1306,13 @@
   }
 
   // ---------- Receptor Morse en tiempo real (on/off keying sobre la envolvente del mic) ----------
-  // A diferencia del barrido 0-20Hz (que analiza cada 300ms con Goertzel), acá necesitamos
+  // A diferencia del barrido espectral 0–5000 Hz, acá necesitamos
   // resolución fina de tiempo para medir punto vs. raya, así que se alimenta directamente
   // desde cada bloque de audio (onaudioprocess), no desde analysisTick.
   const morseRx = {
     floor: 0.0015, unitMs: 1200/18, state:'off', segStart: performance.now(),
-    symbol:'', word:'', wordMorse:'', text:'', lastEdgeAt: performance.now(), pulseHistory:[],
-    onStreak:0, offStreak:0, candidateOnAt:0, candidateOffAt:0
+    symbol:'', word:'', wordMorse:'', text:'', messageMorse:'', lastEdgeAt: performance.now(), pulseHistory:[],
+    onStreak:0, offStreak:0, candidateOnAt:0, candidateOffAt:0, lastMessage:'', lastMessageAt:0
   };
   // El tono de salida es 700 Hz, pero en una habitación real el micrófono suele verlo
   // desplazado por la respuesta de parlante/micrófono. Se toma el mejor bin cercano,
@@ -1312,14 +1331,14 @@
   function morseSilenceFinalizeMs() {
     // Red de seguridad si se corta la transmisión: escala con la velocidad (WPM) en vez de
     // un valor fijo, para no cerrar de más a baja velocidad ni tardar de más a alta velocidad.
-    return Math.max(1100, morseRx.unitMs * 8);
+    return Math.max(1600, morseRx.unitMs * 12);
   }
 
   function morseResetRx() {
-    morseRx.state = 'off'; morseRx.symbol = ''; morseRx.word = ''; morseRx.text = '';
+    morseRx.state = 'off'; morseRx.symbol = ''; morseRx.word = ''; morseRx.text = ''; morseRx.messageMorse = '';
     morseRx.segStart = performance.now(); morseRx.lastEdgeAt = performance.now(); morseRx.pulseHistory = [];
     morseRx.onStreak = 0; morseRx.offStreak = 0;
-    morseRx.candidateOnAt = 0; morseRx.candidateOffAt = 0;
+    morseRx.candidateOnAt = 0; morseRx.candidateOffAt = 0; morseRx.lastMessage = ''; morseRx.lastMessageAt = 0;
     updateDuplexRX('—', 0);
     if (duplexFrame) duplexFrame.textContent = '0';
   }
@@ -1331,23 +1350,35 @@
     duplexSetStatus('RX · letra recibida: '+code+' → '+letter);
     return letter;
   }
-  async function morseFinalizeWord(pushToConversation=true){
-    morseFinalizeLetter();const word=morseRx.word.trim();const wordMorse=morseRx.wordMorse.trim();if(!word)return;
+  function morseFinalizeWord(){
+    // Una palabra sólo se incorpora al mensaje después de su separación Morse.
+    morseFinalizeLetter();const word=morseRx.word.trim();const wordMorse=morseRx.wordMorse.trim();if(!word)return false;
     morseRx.text=(morseRx.text+' '+word).trim().slice(-200);
+    morseRx.messageMorse=(morseRx.messageMorse+(morseRx.messageMorse?' / ':'')+wordMorse).trim();
+    morseRx.word='';morseRx.wordMorse=''; return true;
+  }
+  async function morseEmitMessage(){
+    // El RX se publica una sola vez, tras una pausa larga que cierra el mensaje completo.
+    const message=morseRx.text.trim(), messageMorse=morseRx.messageMorse.trim(); if(!message)return;
+    const now=Date.now();
+    if(message===morseRx.lastMessage && now-morseRx.lastMessageAt<5000){
+      morseRx.text='';morseRx.messageMorse=''; duplexSetStatus('RX · mensaje repetido ignorado'); return;
+    }
+    morseRx.lastMessage=message; morseRx.lastMessageAt=now;
     if(duplexFrame)duplexFrame.textContent=String((parseInt(duplexFrame.textContent,10)||0)+1);
-    if(pushToConversation){
-      const detected=detectLanguageHeuristic(word),translated=await translateText(word,detected==='unknown'?'auto':detected,'es');
-      const hasTranslation=translated&&translated.toLowerCase()!==word.toLowerCase();
+    {
+      const detected=detectLanguageHeuristic(message),translated=await translateText(message,detected==='unknown'?'auto':detected,'es');
+      const hasTranslation=translated&&translated.toLowerCase()!==message.toLowerCase();
       // Mensaje (texto decodificado) y traducción se muestran juntos, siempre acompañados
       // del patrón Morse original (puntos/rayas) que dio origen a la decodificación.
-      updateDuplexRX(hasTranslation?word+' → '+translated:word,.88);
-      addConversationMessage('infra',hasTranslation?word+' → '+translated:word,{
+      updateDuplexRX(hasTranslation?message+' → '+translated:message,.88);
+      addConversationMessage('infra',hasTranslation?message+' → '+translated:message,{
         direction:'rx',hypothesis:false,protocol:true,confidence:.88,
-        band:'Mensaje: '+word+(hasTranslation?' · Traducción: '+translated:'')+' · Morse: '+wordMorse,
-        morse:wordMorse
+        band:'Mensaje: '+message+(hasTranslation?' · Traducción: '+translated:'')+' · Morse: '+messageMorse,
+        morse:messageMorse
       });
-      saveReceivedWord(word,translated,{band:'Morse RX',confidence:.88,morse:wordMorse});await speakOriginalAndTranslation(word,translated,detected,'es');
-    }morseRx.word='';morseRx.wordMorse='';
+      saveReceivedWord(message,translated,{band:'Morse RX',confidence:.88,morse:messageMorse});await speakOriginalAndTranslation(message,translated,detected,'es');
+    }morseRx.text='';morseRx.messageMorse='';
   }
   function morseFeedAudio(data,sr,now){
     // No se descarta el audio mientras esta página transmite: el bloqueo anterior
@@ -1370,7 +1401,7 @@
         if(morseRx.onStreak>=MORSE_ON_STREAK_REQUIRED){
           // Se usa el primer bloque confirmado: antes se perdían ~20 ms de cada punto.
           const start=morseRx.candidateOnAt||now,gap=start-morseRx.lastEdgeAt;
-          if(gap>morseRx.unitMs*MORSE_WORD_GAP_UNITS)morseFinalizeWord(true);
+          if(gap>morseRx.unitMs*MORSE_WORD_GAP_UNITS)morseFinalizeWord();
           else if(gap>morseRx.unitMs*MORSE_LETTER_GAP_UNITS)morseFinalizeLetter();
           morseRx.state='on';morseRx.segStart=start;morseRx.lastEdgeAt=start;
           morseRx.onStreak=0;duplexSetStatus('RX · tono Morse detectado');
@@ -1391,14 +1422,12 @@
           const dots=sorted.slice(0,Math.max(1,Math.ceil(sorted.length/3)));
           if(dots.length>=3){const estimate=dots[Math.floor(dots.length/2)];if(estimate>=35&&estimate<=240)morseRx.unitMs=morseRx.unitMs*.72+estimate*.28;}
           morseRx.symbol+=dur>morseRx.unitMs*1.85?'-':'.';
-          const preview=(morseRx.text+' '+morseRx.word+morseRx.symbol).trim();
-          updateDuplexRX(preview,.5);
           duplexSetStatus('RX · recibiendo símbolo: '+morseRx.symbol+' (esperando señal completa…)');
         }
       }
     }
-    if(morseRx.state==='off'&&!rawIsOn&&now-morseRx.lastEdgeAt>morseSilenceFinalizeMs()&&(morseRx.symbol||morseRx.word)){
-      morseFinalizeWord(true);updateDuplexRX(morseRx.text||'—',.9);duplexSetStatus('RX · mensaje Morse completo');
+    if(morseRx.state==='off'&&!rawIsOn&&now-morseRx.lastEdgeAt>morseSilenceFinalizeMs()&&(morseRx.symbol||morseRx.word||morseRx.text)){
+      morseFinalizeWord(); morseEmitMessage(); duplexSetStatus('RX · mensaje Morse completo');
     }
   }
   function morseFeedSample(rms,now){/* compatibilidad: el receptor usa morseFeedAudio() */}
@@ -2091,6 +2120,7 @@
     calibrating = false; sweeping = false;
     if (sessionRecording) toggleSessionRecording();
     stopAudio();
+    morseResetRx();
     stopSpeech();
     setStatus('standby', 'En espera');
     btnStart.disabled = false; btnStop.disabled = true;
